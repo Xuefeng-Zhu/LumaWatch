@@ -41,9 +41,68 @@ function eventTitle(event) {
   return event.title || "Untitled event";
 }
 
+function eventDateText(event) {
+  return event.dateText || event.date_text || "";
+}
+
+function parseEventDateMs(event) {
+  const text = eventDateText(event).replace(/\s+/g, " ").trim();
+  if (!text) return Number.POSITIVE_INFINITY;
+
+  const currentYear = new Date().getFullYear();
+  const candidates = /\b\d{4}\b/.test(text)
+    ? [text]
+    : [text, `${text} ${currentYear}`, text.replace(/^([A-Za-z]+\.?\s+\d{1,2})\b/, `$1, ${currentYear}`)];
+
+  for (const candidate of candidates) {
+    const parsed = Date.parse(candidate);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function sortEventsByDate(events) {
+  return [...events].sort((a, b) => {
+    const aMs = parseEventDateMs(a);
+    const bMs = parseEventDateMs(b);
+    if (aMs !== bMs) return aMs - bMs;
+    return eventTitle(a).localeCompare(eventTitle(b));
+  });
+}
+
+function compareEventDates(a, b) {
+  const aMs = parseEventDateMs(a);
+  const bMs = parseEventDateMs(b);
+  if (aMs !== bMs) return aMs - bMs;
+  return eventTitle(a).localeCompare(eventTitle(b));
+}
+
+function dateBadge(event) {
+  const rawDate = eventDateText(event);
+  const parsedMs = parseEventDateMs(event);
+  if (!Number.isFinite(parsedMs)) {
+    return `
+      <div class="event-date">
+        <span>Date</span>
+        <strong>TBD</strong>
+        <small>${display(rawDate, "Unknown")}</small>
+      </div>
+    `;
+  }
+
+  const date = new Date(parsedMs);
+  return `
+    <div class="event-date" title="${display(rawDate)}">
+      <span>${display(new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "America/Los_Angeles" }).format(date))}</span>
+      <strong>${display(new Intl.DateTimeFormat("en-US", { day: "numeric", timeZone: "America/Los_Angeles" }).format(date))}</strong>
+      <small>${display(new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }).format(date))}</small>
+    </div>
+  `;
+}
+
 function eventMeta(event) {
   const items = [
-    { label: "When", value: event.dateText || event.date_text },
+    { label: "Date", value: eventDateText(event) },
     { label: "Where", value: event.locationText || event.location_text },
     { label: "Status", value: event.statusText || event.status_text }
   ].filter((item) => item.value);
@@ -60,6 +119,7 @@ function card(event, options = {}) {
   const score = event.matchScore ?? event.match_score;
   return `
     <article class="event-row ${options.highlight ? "event-row--highlight" : ""}">
+      ${dateBadge(event)}
       <div class="event-main">
         <div class="event-kicker">
           <span>${display(source)}</span>
@@ -127,12 +187,14 @@ function sectionHeader(title, count, note) {
 export function renderHtmlReport({ config, db, stats, runEvents }) {
   const generatedAt = new Date().toISOString();
   const sources = db.listSources();
-  const recentSeen = db.listRecentSeen(12).map((row) => ({ ...parseRawJson(row), ...row }));
+  const recentSeen = sortEventsByDate(db.listRecentSeen(12).map((row) => ({ ...parseRawJson(row), ...row })));
   const notifications = db.listRecentNotifications(12);
-  const newEvents = runEvents.newEvents || [];
-  const keptEvents = runEvents.keptEvents || [];
+  const newEvents = sortEventsByDate(runEvents.newEvents || []);
+  const keptEvents = sortEventsByDate(runEvents.keptEvents || []);
   const skippedEvents = runEvents.skippedEvents || [];
-  const skippedPreview = skippedEvents.slice(0, 12);
+  const skippedPreview = [...skippedEvents]
+    .sort((a, b) => compareEventDates(a.event, b.event))
+    .slice(0, 12);
   const hasSourceErrors = sources.some((source) => source.last_error);
   const statusTone = stats.newEvents > 0 ? "new" : hasSourceErrors ? "warning" : "quiet";
   const statusTitle = stats.newEvents > 0
@@ -297,6 +359,37 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
       align-items: center;
     }
     .event-row--highlight { border-color: #5eead4; box-shadow: inset 4px 0 0 var(--accent); }
+    .event-date {
+      flex: 0 0 76px;
+      align-self: stretch;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      border: 1px solid var(--soft-line);
+      border-radius: 8px;
+      background: #f9fafb;
+      color: var(--ink);
+      min-height: 76px;
+      padding: 8px 6px;
+      text-align: center;
+    }
+    .event-date span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+    .event-date strong {
+      display: block;
+      font-size: 25px;
+      line-height: 1;
+      margin: 3px 0;
+    }
+    .event-date small {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.2;
+    }
     .event-main { min-width: 0; }
     .event-kicker {
       display: flex;
@@ -378,7 +471,10 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
       .header-inner { align-items: flex-start; flex-direction: column; }
       .nav-links { justify-content: flex-start; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .status, .event-row, .section-header { display: block; }
+      .status, .section-header { display: block; }
+      .event-row { align-items: flex-start; gap: 12px; }
+      .event-date { flex-basis: 64px; min-height: 68px; }
+      .event-date strong { font-size: 22px; }
       .status-chip, .open-link { display: inline-block; margin-top: 12px; }
       .table-wrap { overflow-x: auto; }
       table { min-width: 760px; }
@@ -419,12 +515,12 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
     </div>
 
     <section id="new">
-      ${sectionHeader("New Events This Run", newEvents.length, "Only events not previously seen are listed here.")}
+      ${sectionHeader("New Events This Run", newEvents.length, "Only events not previously seen are listed here. Sorted by event date, soonest first.")}
       ${newEvents.length ? `<div class="event-list">${newEvents.map((event) => card(event, { highlight: true })).join("")}</div>` : `<div class="empty">No unseen matching events were found in this run.</div>`}
     </section>
 
     <section id="seen">
-      ${sectionHeader("Matching Events Seen This Run", keptEvents.length, "These matched the Seattle AI/tech filter and were recorded as seen.")}
+      ${sectionHeader("Matching Events Seen This Run", keptEvents.length, "These matched the Seattle AI/tech filter and were recorded as seen. Sorted by event date, soonest first.")}
       ${keptEvents.length ? `<div class="event-list">${keptEvents.slice(0, 20).map((event) => card(event)).join("")}</div>` : `<div class="empty">No matching events were kept in this run.</div>`}
     </section>
 
@@ -437,6 +533,7 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
       <summary>Skipped Candidates (${display(skippedPreview.length, 0)})</summary>
       ${skippedPreview.length ? `<div class="event-list">${skippedPreview.map((item) => `
         <article class="event-row">
+          ${dateBadge(item.event)}
           <div class="event-main">
             <div class="event-kicker"><span>${display(item.event?.sourceName, "source")}</span><span>score ${display(item.score, 0)}</span></div>
             <a class="event-title" href="${escapeHtml(eventUrl(item.event))}" target="_blank" rel="noreferrer">${display(eventTitle(item.event), "Untitled event")}</a>

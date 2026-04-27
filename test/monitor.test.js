@@ -72,6 +72,39 @@ test("check mode writes an HTML report", async () => {
   db.close();
 });
 
+test("HTML report sorts events by event date", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const later = aiSeattleEvent({
+    eventUrl: "https://luma.com/later-ai-seattle",
+    canonicalUrl: "https://luma.com/later-ai-seattle",
+    title: "Later Seattle AI Meetup",
+    dateText: "Jun 20, 2026, 6:00 PM"
+  });
+  const earlier = aiSeattleEvent({
+    eventUrl: "https://luma.com/earlier-ai-seattle",
+    canonicalUrl: "https://luma.com/earlier-ai-seattle",
+    title: "Earlier Seattle AI Meetup",
+    dateText: "May 5, 2026, 6:00 PM"
+  });
+
+  await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: [later, earlier] }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  const html = fs.readFileSync(config.reports.path, "utf8");
+  assert.ok(
+    html.indexOf("Earlier Seattle AI Meetup") < html.indexOf("Later Seattle AI Meetup"),
+    "expected earlier event to appear before later event"
+  );
+  assert.match(html, /May/);
+  assert.match(html, /Jun/);
+  db.close();
+});
+
 test("dedupe prevents duplicate notifications across check runs", async () => {
   const config = testConfig();
   const db = makeDb(config);

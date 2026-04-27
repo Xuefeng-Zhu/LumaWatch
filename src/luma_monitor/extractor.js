@@ -63,6 +63,47 @@ async function scrollPage(page, steps, pauseMs) {
 
 async function extractCandidatesFromPage(page, source, config) {
   return page.evaluate((sourceInput) => {
+    function normalizeText(value) {
+      return (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    }
+
+    function addLinksFrom(root, anchors) {
+      for (const anchor of root.querySelectorAll?.("a[href]") || []) {
+        anchors.add(anchor);
+      }
+    }
+
+    function nearbyEventAnchors() {
+      const headings = Array.from(document.querySelectorAll("h2.section-title"))
+        .filter((heading) => normalizeText(heading.innerText || heading.textContent) === "nearby events");
+      const anchors = new Set();
+
+      for (const heading of headings) {
+        let scoped = false;
+        let node = heading.parentElement;
+        for (let depth = 0; depth < 5 && node && node !== document.body; depth += 1) {
+          const hasLinks = node.querySelectorAll("a[href]").length > 0;
+          const sectionTitleCount = node.querySelectorAll("h2.section-title").length;
+          if (hasLinks && sectionTitleCount === 1) {
+            addLinksFrom(node, anchors);
+            scoped = true;
+            break;
+          }
+          node = node.parentElement;
+        }
+
+        if (scoped) continue;
+
+        let sibling = heading.nextElementSibling;
+        while (sibling && !sibling.matches?.("h2.section-title")) {
+          addLinksFrom(sibling, anchors);
+          sibling = sibling.nextElementSibling;
+        }
+      }
+
+      return Array.from(anchors);
+    }
+
     function textFor(anchor) {
       let node = anchor;
       let best = anchor.innerText || anchor.textContent || "";
@@ -106,7 +147,7 @@ async function extractCandidatesFromPage(page, source, config) {
       return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
-    return Array.from(document.querySelectorAll("a[href]")).map((anchor) => {
+    return nearbyEventAnchors().map((anchor) => {
       const href = anchor.href;
       const cardText = textFor(anchor);
       const sectionText = nearbyContextText(anchor);
@@ -116,7 +157,8 @@ async function extractCandidatesFromPage(page, source, config) {
         href,
         linkText: (anchor.innerText || anchor.textContent || "").trim(),
         cardText,
-        foundInNearbySection: nearbyPattern.test(`${cardText}\n${sectionText}`),
+        foundInNearbySection: true,
+        nearbySectionMatched: nearbyPattern.test(`${cardText}\n${sectionText}`),
         sourceName: sourceInput.name,
         sourceUrl: sourceInput.url,
         sourceType: sourceInput.type
@@ -169,6 +211,13 @@ export class LumaExtractor {
       }
 
       const rawCandidates = await extractCandidatesFromPage(page, source, this.config);
+      if (rawCandidates.length === 0) {
+        this.logger?.warn("No Nearby Events section candidates found", {
+          source: source.name,
+          heading_selector: "h2.section-title",
+          heading_text: "Nearby Events"
+        });
+      }
       const byUrl = new Map();
       for (const candidate of rawCandidates) {
         const canonicalUrl = normalizeLumaEventUrl(candidate.href);
