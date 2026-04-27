@@ -48,3 +48,17 @@ test("parseCardFields derives a clean title from multiline Luma link text", () =
   assert.equal(parsed.title, "Costa Rica Tech Week 2026");
   assert.equal(parsed.dateText, "5/16 — 5/24");
 });
+
+test("parseCardFields does not treat numeric event titles as time-only text", () => {
+  const parsed = parseCardFields({
+    href: "https://luma.com/nearby-ai-10",
+    linkText: [
+      "Nearby AI Event 10",
+      "May 20, 6:00 PM",
+      "Seattle, WA"
+    ].join("\n")
+  }, defaultConfig);
+
+  assert.equal(parsed.title, "Nearby AI Event 10");
+  assert.equal(parsed.dateText, "May 20, 6:00 PM");
+});

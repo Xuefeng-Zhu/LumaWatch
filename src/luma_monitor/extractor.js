@@ -22,7 +22,7 @@ function isDateLikeLine(line) {
 
 function isTimeOnlyLine(line) {
   const trimmed = line.trim();
-  return TIME_RE.test(trimmed) && !isDateLikeLine(trimmed);
+  return /^\d{1,2}(?::\d{2})?\s*(am|pm|AM|PM)?\s*([A-Z]{2,4})?$/.test(trimmed) && !isDateLikeLine(trimmed);
 }
 
 function uniqueLines(value) {
@@ -39,8 +39,8 @@ function titleLineFrom(lines) {
     && !isTimeOnlyLine(line)
     && !isStatusOnlyLine(line)
     && !STATUS_RE.test(line)
-    && !/\b\d+\s*Events?\b/i.test(line)
-    && !/\b\d+\s*Subscribers?\b/i.test(line)
+    && !/^\d+\s*Events?\b/i.test(line)
+    && !/^\d+\s*Subscribers?\b/i.test(line)
     && !/^Subscribe$/i.test(line)
   );
 }
@@ -129,40 +129,6 @@ async function waitForSettledPage(page, timeoutMs) {
   ]);
 }
 
-async function scrollPage(page, steps, pauseMs) {
-  const minSteps = Math.max(1, steps);
-  const maxSteps = Math.max(minSteps, minSteps + 10);
-  let stableHeightCount = 0;
-  let previousHeight = 0;
-
-  for (let index = 0; index < maxSteps; index += 1) {
-    const { scrollHeight, viewportHeight } = await page.evaluate(() => ({
-      scrollHeight: document.documentElement.scrollHeight,
-      viewportHeight: window.innerHeight
-    }));
-    await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" }));
-    await page.waitForTimeout(pauseMs);
-
-    const currentHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-    if (currentHeight <= previousHeight || currentHeight === scrollHeight) {
-      stableHeightCount += 1;
-    } else {
-      stableHeightCount = 0;
-    }
-    previousHeight = currentHeight;
-
-    const atBottom = await page.evaluate(() =>
-      Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight
-    );
-    if (index + 1 >= minSteps && atBottom && stableHeightCount >= 2) {
-      break;
-    }
-
-    if (viewportHeight <= 0) break;
-  }
-  await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }));
-}
-
 async function extractCandidatesFromPage(page, source, config) {
   return page.evaluate((sourceInput) => {
     function normalizeText(value) {
@@ -222,12 +188,6 @@ async function extractCandidatesFromPage(page, source, config) {
       return Array.from(anchors);
     }
 
-    function pageEventAnchors() {
-      return Array.from(document.querySelectorAll("a[href]"))
-        .filter((anchor) => lumaLikeEventHref(anchor.href))
-        .filter((anchor) => !anchor.closest("nav, footer"));
-    }
-
     function textFor(anchor) {
       let node = anchor;
       let best = anchor.innerText || anchor.textContent || "";
@@ -282,19 +242,17 @@ async function extractCandidatesFromPage(page, source, config) {
       return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
-    const nearbyAnchors = new Set(nearbyEventAnchors());
-    return pageEventAnchors().map((anchor) => {
+    return nearbyEventAnchors().map((anchor) => {
       const href = anchor.href;
       const cardText = textFor(anchor);
       const sectionText = nearbyContextText(anchor);
       const targetCity = escapeRegExp(sourceInput.targetCity || "Seattle");
       const nearbyPattern = new RegExp(`\\b(nearby|near you|near ${targetCity}|in ${targetCity}|${targetCity})\\b`, "i");
-      const foundInNearbySection = nearbyAnchors.has(anchor);
       return {
         href,
         linkText: (anchor.innerText || anchor.textContent || "").trim(),
         cardText,
-        foundInNearbySection,
+        foundInNearbySection: true,
         nearbySectionMatched: nearbyPattern.test(`${cardText}\n${sectionText}`),
         sourceName: sourceInput.name,
         sourceUrl: sourceInput.url,
@@ -302,6 +260,124 @@ async function extractCandidatesFromPage(page, source, config) {
       };
     });
   }, { ...source, targetCity: config.location?.target_city || "Seattle" });
+}
+
+async function scrollToNearbySection(page, pauseMs) {
+  const found = await page.evaluate(() => {
+    function normalizeText(value) {
+      return (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    }
+
+    const heading = Array.from(document.querySelectorAll("h2.section-title"))
+      .find((element) => normalizeText(element.innerText || element.textContent) === "nearby events");
+    if (!heading) return false;
+    heading.scrollIntoView({ block: "start", behavior: "instant" });
+    return true;
+  });
+
+  if (found) await page.waitForTimeout(pauseMs);
+  return found;
+}
+
+async function scrollNearbyVirtualList(page) {
+  return page.evaluate(() => {
+    function normalizeText(value) {
+      return (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    }
+
+    function isSectionBoundary(element) {
+      return element.matches?.(".section-title-wrapper")
+        || element.matches?.("h2.section-title")
+        || Boolean(element.querySelector?.(":scope > .section-title-wrapper, :scope > h2.section-title"));
+    }
+
+    function nearbyRoots() {
+      const headings = Array.from(document.querySelectorAll("h2.section-title"))
+        .filter((heading) => normalizeText(heading.innerText || heading.textContent) === "nearby events");
+      const roots = new Set();
+
+      for (const heading of headings) {
+        const titleWrapper = heading.closest(".section-title-wrapper") || heading.parentElement;
+        let sibling = titleWrapper?.nextElementSibling;
+        while (sibling && !isSectionBoundary(sibling)) {
+          roots.add(sibling);
+          sibling = sibling.nextElementSibling;
+        }
+      }
+
+      return Array.from(roots);
+    }
+
+    let changed = false;
+    const scrollables = new Set();
+    for (const root of nearbyRoots()) {
+      if (root.scrollHeight > root.clientHeight + 8) scrollables.add(root);
+      for (const element of root.querySelectorAll?.("*") || []) {
+        if (element.scrollHeight > element.clientHeight + 8) scrollables.add(element);
+      }
+    }
+
+    for (const element of scrollables) {
+      const before = element.scrollTop;
+      const step = Math.max(120, Math.floor(element.clientHeight * 0.85));
+      element.scrollTop = Math.min(element.scrollTop + step, element.scrollHeight);
+      if (element.scrollTop !== before) changed = true;
+    }
+
+    const beforeY = window.scrollY;
+    const pageStep = Math.max(240, Math.floor(window.innerHeight * 0.85));
+    window.scrollBy({ top: pageStep, behavior: "instant" });
+    if (window.scrollY !== beforeY) changed = true;
+
+    const atPageBottom = Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight;
+    const scrollablesAtBottom = Array.from(scrollables).every((element) =>
+      Math.ceil(element.scrollTop + element.clientHeight) >= element.scrollHeight
+    );
+
+    return { changed, atEnd: atPageBottom && scrollablesAtBottom };
+  });
+}
+
+async function collectNearbyCandidatesFromPage(page, source, config) {
+  const pauseMs = config.browser?.scroll_pause_ms ?? 1200;
+  const configuredSteps = config.browser?.scroll_steps ?? 6;
+  const maxSteps = Math.max(12, configuredSteps * 8);
+  const byHref = new Map();
+
+  async function addVisibleCandidates() {
+    const candidates = await extractCandidatesFromPage(page, source, config);
+    let added = 0;
+    for (const candidate of candidates) {
+      const previous = byHref.get(candidate.href);
+      if (!previous || (candidate.cardText || "").length > (previous.cardText || "").length) {
+        byHref.set(candidate.href, candidate);
+        added += previous ? 0 : 1;
+      }
+    }
+    return added;
+  }
+
+  const foundNearbySection = await scrollToNearbySection(page, pauseMs);
+  if (!foundNearbySection) return [];
+
+  await addVisibleCandidates();
+  let stableSteps = 0;
+  for (let index = 0; index < maxSteps; index += 1) {
+    const scrollState = await scrollNearbyVirtualList(page);
+    await page.waitForTimeout(pauseMs);
+    const added = await addVisibleCandidates();
+
+    if (added === 0 && !scrollState.changed) {
+      stableSteps += 1;
+    } else {
+      stableSteps = 0;
+    }
+
+    if (scrollState.atEnd && stableSteps >= 2) break;
+    if (stableSteps >= 4) break;
+  }
+
+  return Array.from(byHref.values());
 }
 
 async function extractPageLocationSignals(page, config) {
@@ -333,11 +409,6 @@ export class LumaExtractor {
 
       await gotoWithRetries(page, source.url, this.config.browser?.timeout_ms || 60000, this.logger);
       await waitForSettledPage(page, this.config.browser?.timeout_ms || 60000);
-      await scrollPage(
-        page,
-        this.config.browser?.scroll_steps ?? 6,
-        this.config.browser?.scroll_pause_ms ?? 1200
-      );
 
       const locationSignals = await extractPageLocationSignals(page, this.config);
       if (locationSignals.hasNearbyUi && !locationSignals.hasTargetSignals) {
@@ -347,7 +418,7 @@ export class LumaExtractor {
         });
       }
 
-      const rawCandidates = await extractCandidatesFromPage(page, source, this.config);
+      const rawCandidates = await collectNearbyCandidatesFromPage(page, source, this.config);
       const byUrl = new Map();
       for (const candidate of rawCandidates) {
         const canonicalUrl = normalizeLumaEventUrl(candidate.href);
@@ -363,9 +434,11 @@ export class LumaExtractor {
 
       const candidates = Array.from(byUrl.values());
       if (candidates.length === 0) {
-        this.logger?.warn("No Luma event links found on page", {
+        this.logger?.warn("No Luma event links found in Nearby Events section", {
           source: source.name,
-          links_seen: rawCandidates.length
+          heading_selector: "h2.section-title",
+          heading_text: "Nearby Events",
+          nearby_links_seen: rawCandidates.length
         });
       }
       this.logger?.info("Extracted Luma event candidates", {

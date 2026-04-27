@@ -350,14 +350,14 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
     : hasSourceErrors
       ? "One or more sources need attention"
       : noCurrentCandidates
-        ? "No event links found this run"
+        ? "No Nearby Events found this run"
         : "No new events this run";
   const statusCopy = stats.newEvents > 0
     ? "Review the new-event list first; each event has already been marked seen to avoid duplicate alerts."
     : hasSourceErrors
       ? "Check Source Health for the last error from each failing source."
       : noCurrentCandidates
-        ? "The live Luma pages did not expose event links. Historical database rows, if shown below, are not current run results."
+        ? "The live Luma pages did not expose event links under the Nearby Events section. Historical database rows, if shown below, are not current run results."
         : "The monitor ran successfully and all matching events were already known.";
 
   return `<!doctype html>
@@ -691,7 +691,7 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
 
     <details>
       <summary>Historical Database Events (${display(recentSeen.length, 0)})</summary>
-      <p class="details-note">These are stored seen events from prior runs. They are shown for audit/debugging only and may not be present in the current live page snapshot.</p>
+      <p class="details-note">These are stored seen events from prior runs. They are shown for audit/debugging only and may not be present in the current live Nearby Events snapshot.</p>
       ${recentSeen.length ? `<div class="event-list">${recentSeen.map((event) => card(event)).join("")}</div>` : `<div class="empty">No seen events in the database yet.</div>`}
     </details>
 

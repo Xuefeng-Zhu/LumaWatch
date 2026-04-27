@@ -11,7 +11,7 @@ test("filter keeps Seattle AI and tech examples", () => {
   assert.match(result.why, /Seattle|AI|Tech|nearby/i);
 });
 
-test("filter keeps relevant category events without nearby signals", () => {
+test("filter rejects broad category events without nearby signals", () => {
   const config = testConfig();
   const result = scoreEvent({
     title: "Global AI Founder Summit",
@@ -22,7 +22,7 @@ test("filter keeps relevant category events without nearby signals", () => {
     sourceUrl: "https://luma.com/ai",
     foundInNearbySection: false
   }, config);
-  assert.equal(result.keep, true);
+  assert.equal(result.keep, false);
   assert.match(result.why, /no nearby signal/);
 });
 
@@ -41,7 +41,7 @@ test("filter keeps nearby category events with hidden exact location", () => {
   assert.match(result.why, /nearby section/);
 });
 
-test("filter keeps relevant events that clearly belong to another city", () => {
+test("filter rejects nearby-section events that clearly belong to another city", () => {
   const config = testConfig();
   const result = scoreEvent({
     title: "San Francisco AI Startup Night",
@@ -52,7 +52,7 @@ test("filter keeps relevant events that clearly belong to another city", () => {
     sourceUrl: "https://luma.com/ai",
     foundInNearbySection: true
   }, config);
-  assert.equal(result.keep, true);
+  assert.equal(result.keep, false);
   assert.match(result.why, /other city signal/);
 });
 
