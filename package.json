@@ -1,0 +1,25 @@
+{
+  "name": "luma-watch",
+  "version": "1.0.0",
+  "description": "Personal Luma event monitor for AI and tech events near Seattle.",
+  "type": "module",
+  "bin": {
+    "luma-monitor": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "init-db": "node src/cli.js init-db --config config.yaml",
+    "baseline": "node src/cli.js baseline --config config.yaml",
+    "check": "node src/cli.js check --config config.yaml",
+    "playwright:install": "npx playwright install --with-deps chromium"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "playwright": "^1.51.1",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,197 @@
+import fs from "node:fs";
+import path from "node:path";
+import Database from "better-sqlite3";
+import { eventFingerprint, eventKeyFor } from "./url.js";
+import { nowIso } from "./time.js";
+
+export class SeenDatabase {
+  constructor(dbPath) {
+    this.dbPath = dbPath;
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    this.db = new Database(dbPath);
+    this.db.pragma("journal_mode = WAL");
+    this.db.pragma("foreign_keys = ON");
+  }
+
+  close() {
+    this.db.close();
+  }
+
+  init() {
+    this.db.exec(`
+      create table if not exists sources (
+        id integer primary key,
+        name text unique,
+        url text,
+        type text,
+        enabled integer,
+        last_checked_at text,
+        last_success_at text,
+        last_error text
+      );
+
+      create table if not exists seen_events (
+        event_key text primary key,
+        event_url text,
+        canonical_url text,
+        title text,
+        source_name text,
+        first_seen_at text,
+        last_seen_at text,
+        first_notified_at text nullable,
+        fingerprint text,
+        raw_json text
+      );
+
+      create table if not exists event_observations (
+        id integer primary key autoincrement,
+        event_key text,
+        observed_at text,
+        source_name text,
+        title text,
+        event_url text,
+        location_text text,
+        date_text text,
+        status_text text,
+        fingerprint text,
+        raw_json text
+      );
+
+      create table if not exists notifications (
+        id integer primary key autoincrement,
+        event_key text,
+        channel text,
+        sent_at text,
+        status text,
+        error text nullable,
+        payload_json text
+      );
+    `);
+  }
+
+  upsertSource(source) {
+    this.db.prepare(`
+      insert into sources (name, url, type, enabled)
+      values (@name, @url, @type, @enabled)
+      on conflict(name) do update set
+        url = excluded.url,
+        type = excluded.type,
+        enabled = excluded.enabled
+    `).run({
+      name: source.name,
+      url: source.url,
+      type: source.type || null,
+      enabled: source.enabled === false ? 0 : 1
+    });
+  }
+
+  markSourceChecked(sourceName, fields = {}) {
+    this.db.prepare(`
+      update sources set
+        last_checked_at = @last_checked_at,
+        last_success_at = coalesce(@last_success_at, last_success_at),
+        last_error = @last_error
+      where name = @name
+    `).run({
+      name: sourceName,
+      last_checked_at: fields.last_checked_at || nowIso(),
+      last_success_at: fields.last_success_at || null,
+      last_error: fields.last_error || null
+    });
+  }
+
+  getSource(name) {
+    return this.db.prepare("select * from sources where name = ?").get(name);
+  }
+
+  getSeen(eventKey) {
+    return this.db.prepare("select * from seen_events where event_key = ?").get(eventKey);
+  }
+
+  countSeen() {
+    return this.db.prepare("select count(*) as count from seen_events").get().count;
+  }
+
+  countNotifications() {
+    return this.db.prepare("select count(*) as count from notifications").get().count;
+  }
+
+  upsertSeen(event, options = {}) {
+    const ts = options.now || nowIso();
+    const eventKey = event.eventKey || eventKeyFor(event);
+    const fingerprint = event.fingerprint || eventFingerprint(event);
+    this.db.prepare(`
+      insert into seen_events (
+        event_key, event_url, canonical_url, title, source_name,
+        first_seen_at, last_seen_at, first_notified_at, fingerprint, raw_json
+      )
+      values (
+        @event_key, @event_url, @canonical_url, @title, @source_name,
+        @first_seen_at, @last_seen_at, @first_notified_at, @fingerprint, @raw_json
+      )
+      on conflict(event_key) do update set
+        event_url = excluded.event_url,
+        canonical_url = excluded.canonical_url,
+        title = excluded.title,
+        source_name = excluded.source_name,
+        last_seen_at = excluded.last_seen_at,
+        first_notified_at = coalesce(seen_events.first_notified_at, excluded.first_notified_at),
+        fingerprint = excluded.fingerprint,
+        raw_json = excluded.raw_json
+    `).run({
+      event_key: eventKey,
+      event_url: event.eventUrl || event.canonicalUrl || null,
+      canonical_url: event.canonicalUrl || event.eventUrl || null,
+      title: event.title || null,
+      source_name: event.sourceName || null,
+      first_seen_at: ts,
+      last_seen_at: ts,
+      first_notified_at: options.notified ? ts : null,
+      fingerprint,
+      raw_json: JSON.stringify(event)
+    });
+    return eventKey;
+  }
+
+  insertObservation(event, options = {}) {
+    const ts = options.now || nowIso();
+    const eventKey = event.eventKey || eventKeyFor(event);
+    const fingerprint = event.fingerprint || eventFingerprint(event);
+    this.db.prepare(`
+      insert into event_observations (
+        event_key, observed_at, source_name, title, event_url,
+        location_text, date_text, status_text, fingerprint, raw_json
+      )
+      values (
+        @event_key, @observed_at, @source_name, @title, @event_url,
+        @location_text, @date_text, @status_text, @fingerprint, @raw_json
+      )
+    `).run({
+      event_key: eventKey,
+      observed_at: ts,
+      source_name: event.sourceName || null,
+      title: event.title || null,
+      event_url: event.eventUrl || event.canonicalUrl || null,
+      location_text: event.locationText || null,
+      date_text: event.dateText || null,
+      status_text: event.statusText || null,
+      fingerprint,
+      raw_json: JSON.stringify(event)
+    });
+    return eventKey;
+  }
+
+  insertNotification(record) {
+    this.db.prepare(`
+      insert into notifications (event_key, channel, sent_at, status, error, payload_json)
+      values (@event_key, @channel, @sent_at, @status, @error, @payload_json)
+    `).run({
+      event_key: record.eventKey,
+      channel: record.channel,
+      sent_at: record.sentAt || nowIso(),
+      status: record.status,
+      error: record.error || null,
+      payload_json: JSON.stringify(record.payload || {})
+    });
+  }
+}
