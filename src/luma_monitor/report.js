@@ -342,17 +342,22 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
     .sort((a, b) => compareEventDates(a.event, b.event))
     .slice(0, 12);
   const hasSourceErrors = sources.some((source) => source.last_error);
-  const statusTone = stats.newEvents > 0 ? "new" : hasSourceErrors ? "warning" : "quiet";
+  const noCurrentCandidates = stats.sourcesChecked > 0 && stats.candidates === 0;
+  const statusTone = stats.newEvents > 0 ? "new" : hasSourceErrors || noCurrentCandidates ? "warning" : "quiet";
   const statusTitle = stats.newEvents > 0
     ? `${stats.newEvents} new event${stats.newEvents === 1 ? "" : "s"} found`
     : hasSourceErrors
       ? "One or more sources need attention"
-      : "No new events this run";
+      : noCurrentCandidates
+        ? "No Nearby Events found this run"
+        : "No new events this run";
   const statusCopy = stats.newEvents > 0
     ? "Review the new-event list first; each event has already been marked seen to avoid duplicate alerts."
     : hasSourceErrors
       ? "Check Source Health for the last error from each failing source."
-      : "The monitor ran successfully and all matching events were already known.";
+      : noCurrentCandidates
+        ? "The live Luma pages did not expose event links under the Nearby Events section. Historical database rows, if shown below, are not current run results."
+        : "The monitor ran successfully and all matching events were already known.";
 
   return `<!doctype html>
 <html lang="en">
@@ -496,7 +501,6 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
     .event-list { display: grid; gap: 10px; }
     .event-row {
       display: flex;
-      justify-content: space-between;
       gap: 16px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -536,7 +540,10 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
       font-size: 11px;
       line-height: 1.2;
     }
-    .event-main { min-width: 0; }
+    .event-main {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
     .event-kicker {
       display: flex;
       gap: 8px;
@@ -597,6 +604,10 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
       font-weight: 750;
       font-size: 18px;
       margin-bottom: 14px;
+    }
+    .details-note {
+      color: var(--muted);
+      margin: -6px 0 14px;
     }
     .badge {
       display: inline-flex;
@@ -671,7 +682,8 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
     </section>
 
     <details>
-      <summary>Recently Seen Events (${display(recentSeen.length, 0)})</summary>
+      <summary>Historical Database Events (${display(recentSeen.length, 0)})</summary>
+      <p class="details-note">These are stored seen events from prior runs. They are shown for audit/debugging only and may not be present in the current live Nearby Events snapshot.</p>
       ${recentSeen.length ? `<div class="event-list">${recentSeen.map((event) => card(event)).join("")}</div>` : `<div class="empty">No seen events in the database yet.</div>`}
     </details>
 

@@ -174,6 +174,35 @@ test("HTML report recovers date ranges from Luma tech card text", async () => {
   db.close();
 });
 
+test("HTML report labels stored events as historical when current run has no candidates", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const stored = aiSeattleEvent({
+    eventUrl: "https://luma.com/stored-ai-seattle",
+    canonicalUrl: "https://luma.com/stored-ai-seattle",
+    title: "Stored Seattle AI Meetup"
+  });
+
+  await runMonitor(config, {
+    mode: "baseline",
+    db,
+    extractor: new FixtureExtractor({ fixture: [stored] }),
+    notifiers: [new CollectingNotifier()]
+  });
+  await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: [] }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  const html = fs.readFileSync(config.reports.path, "utf8");
+  assert.match(html, /No Nearby Events found this run/);
+  assert.match(html, /Historical Database Events/);
+  assert.match(html, /not current run results/);
+  db.close();
+});
+
 test("HTML report sorts relative Today and Tomorrow dates correctly", async () => {
   const config = testConfig();
   const db = makeDb(config);
