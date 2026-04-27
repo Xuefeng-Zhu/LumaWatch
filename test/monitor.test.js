@@ -138,6 +138,42 @@ test("HTML report does not treat time-only text as an event date", async () => {
   db.close();
 });
 
+test("HTML report recovers date ranges from Luma tech card text", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const event = aiSeattleEvent({
+    eventUrl: "https://luma.com/crtechweek",
+    canonicalUrl: "https://luma.com/crtechweek",
+    title: "Costa Rica Tech Week 2026",
+    dateText: "10:12 AM PDT",
+    cardText: [
+      "Upcoming Major Events",
+      "May",
+      "Costa Rica Tech Week 2026",
+      "68 Events104 Subscribers",
+      "San Jose, Costa Rica",
+      "5/16 — 5/24",
+      "Boston Tech Week",
+      "0 Events11 Subscribers",
+      "Boston, United States",
+      "5/26 — 5/31"
+    ].join("\n")
+  });
+
+  await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: [event] }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  const html = fs.readFileSync(config.reports.path, "utf8");
+  assert.match(html, /Costa Rica Tech Week 2026/);
+  assert.match(html, /5\/16 — 5\/24/);
+  assert.doesNotMatch(html, /<strong>TBD<\/strong>/);
+  db.close();
+});
+
 test("dedupe prevents duplicate notifications across check runs", async () => {
   const config = testConfig();
   const db = makeDb(config);

@@ -45,39 +45,96 @@ function rawEventDateText(event) {
   return event.dateText || event.date_text || "";
 }
 
+function normalizeText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function hasUsableDateSignal(value) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return false;
   if (/^(happening now|live now|starting soon)$/i.test(text)) return false;
   if (/^\d{1,2}:\d{2}\s*(am|pm)?\s*([A-Z]{2,4})?$/i.test(text)) return false;
-  return /\b(today|tomorrow|mon|tue|wed|thu|fri|sat|sun)\b/i.test(text)
+  const shortDateText = text.length <= 80;
+  return (shortDateText && /^(today|tomorrow|mon(day)?|tue(sday)?|wed(nesday)?|thu(rsday)?|fri(day)?|sat(urday)?|sun(day)?)(\b|,)/i.test(text))
     || /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/i.test(text)
     || /\b\d{1,2}\/\d{1,2}(\s*(—|-|to)\s*\d{1,2}\/\d{1,2})?\b/.test(text)
     || /\b\d{4}-\d{2}-\d{2}\b/.test(text);
 }
 
+function inferDateFromCardText(event) {
+  const title = normalizeText(eventTitle(event));
+  const lines = String(event.cardText || event.card_text || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!title || !lines.length) return "";
+
+  let titleIndex = lines.findIndex((line) => normalizeText(line) === title);
+  if (titleIndex < 0) {
+    titleIndex = lines.findIndex((line) => normalizeText(line).includes(title));
+  }
+  if (titleIndex < 0) {
+    titleIndex = lines.findIndex((line) => {
+      const normalizedLine = normalizeText(line);
+      return normalizedLine.length >= 8 && title.includes(normalizedLine);
+    });
+  }
+  if (titleIndex < 0) return "";
+
+  const nearbyLines = lines.slice(titleIndex + 1, titleIndex + 8);
+  return nearbyLines.find((line) => hasUsableDateSignal(line)) || "";
+}
+
 function eventDateText(event) {
   const raw = rawEventDateText(event);
-  return hasUsableDateSignal(raw) ? raw : "";
+  if (hasUsableDateSignal(raw)) return raw;
+  return inferDateFromCardText(event);
+}
+
+function parseTimeParts(text) {
+  const match = String(text || "").match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  if (!match) return { hour: 12, minute: 0, label: "" };
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || "0");
+  const meridiem = match[3].toLowerCase();
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  return { hour, minute, label: match[0] };
+}
+
+function parseSortableDate(text) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return Number.POSITIVE_INFINITY;
+  const currentYear = new Date().getFullYear();
+
+  const iso = normalized.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (iso) {
+    return Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12);
+  }
+
+  const numeric = normalized.match(/\b(\d{1,2})\/(\d{1,2})\b/);
+  if (numeric) {
+    return Date.UTC(currentYear, Number(numeric[1]) - 1, Number(numeric[2]), 12);
+  }
+
+  const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const named = normalized.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:,\s*(\d{4}))?/i);
+  if (named) {
+    const monthKey = named[1].toLowerCase() === "sept" ? "sep" : named[1].toLowerCase();
+    const month = monthNames.indexOf(monthKey);
+    const day = Number(named[2]);
+    const year = Number(named[3] || currentYear);
+    const time = parseTimeParts(normalized);
+    return Date.UTC(year, month, day, time.hour, time.minute);
+  }
+
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
 }
 
 function parseEventDateMs(event) {
   const text = eventDateText(event).replace(/\s+/g, " ").trim();
-  if (!text) return Number.POSITIVE_INFINITY;
-
-  const currentYear = new Date().getFullYear();
-  const candidates = /\b\d{4}\b/.test(text)
-    ? [text]
-    : [
-        text.replace(/^([A-Za-z]+\.?\s+\d{1,2})(,)?\s*/, `$1, ${currentYear}, `),
-        `${text} ${currentYear}`
-      ];
-
-  for (const candidate of candidates) {
-    const parsed = Date.parse(candidate);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return Number.POSITIVE_INFINITY;
+  return parseSortableDate(text);
 }
 
 function sortEventsByDate(events) {
@@ -97,7 +154,6 @@ function compareEventDates(a, b) {
 }
 
 function dateBadge(event) {
-  const rawDate = rawEventDateText(event);
   const usableDate = eventDateText(event);
   const parsedMs = parseEventDateMs(event);
   if (!Number.isFinite(parsedMs)) {
@@ -110,12 +166,34 @@ function dateBadge(event) {
     `;
   }
 
-  const date = new Date(parsedMs);
+  const numeric = usableDate.match(/\b(\d{1,2}\/\d{1,2})\b/);
+  if (numeric) {
+    return `
+      <div class="event-date" title="${display(usableDate)}">
+        <span>Date</span>
+        <strong>${display(numeric[1])}</strong>
+        <small>${display(usableDate)}</small>
+      </div>
+    `;
+  }
+
+  const named = usableDate.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})/i);
+  const time = parseTimeParts(usableDate);
+  if (named) {
+    return `
+      <div class="event-date" title="${display(usableDate)}">
+        <span>${display(named[1].slice(0, 3))}</span>
+        <strong>${display(named[2])}</strong>
+        <small>${display(time.label || usableDate)}</small>
+      </div>
+    `;
+  }
+
   return `
-    <div class="event-date" title="${display(rawDate)}">
-      <span>${display(new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "America/Los_Angeles" }).format(date))}</span>
-      <strong>${display(new Intl.DateTimeFormat("en-US", { day: "numeric", timeZone: "America/Los_Angeles" }).format(date))}</strong>
-      <small>${display(new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }).format(date))}</small>
+    <div class="event-date" title="${display(usableDate)}">
+      <span>Date</span>
+      <strong>${display(usableDate)}</strong>
+      <small>${display(usableDate)}</small>
     </div>
   `;
 }
