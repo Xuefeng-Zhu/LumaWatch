@@ -77,11 +77,37 @@ async function waitForSettledPage(page, timeoutMs) {
 }
 
 async function scrollPage(page, steps, pauseMs) {
-  for (let index = 0; index < steps; index += 1) {
-    await page.evaluate(() => window.scrollBy({ top: Math.floor(window.innerHeight * 0.85), behavior: "smooth" }));
+  const minSteps = Math.max(1, steps);
+  const maxSteps = Math.max(minSteps, minSteps + 10);
+  let stableHeightCount = 0;
+  let previousHeight = 0;
+
+  for (let index = 0; index < maxSteps; index += 1) {
+    const { scrollHeight, viewportHeight } = await page.evaluate(() => ({
+      scrollHeight: document.documentElement.scrollHeight,
+      viewportHeight: window.innerHeight
+    }));
+    await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" }));
     await page.waitForTimeout(pauseMs);
+
+    const currentHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+    if (currentHeight <= previousHeight || currentHeight === scrollHeight) {
+      stableHeightCount += 1;
+    } else {
+      stableHeightCount = 0;
+    }
+    previousHeight = currentHeight;
+
+    const atBottom = await page.evaluate(() =>
+      Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight
+    );
+    if (index + 1 >= minSteps && atBottom && stableHeightCount >= 2) {
+      break;
+    }
+
+    if (viewportHeight <= 0) break;
   }
-  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }));
 }
 
 async function extractCandidatesFromPage(page, source, config) {
