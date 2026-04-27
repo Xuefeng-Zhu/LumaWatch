@@ -77,6 +77,13 @@ node src/cli.js check --config config.yaml --headed
 
 `--headful` is also accepted as an alias. Use `--headless` to force headless mode for a single run, overriding `config.yaml` or `LUMA_HEADLESS`.
 
+By default, the monitor does not open individual event detail pages. It extracts and filters from the configured discovery pages only. To opt into slower detail-page enrichment, set:
+
+```yaml
+browser:
+  enrich_details: true
+```
+
 Each `check` run also writes a static HTML report by default:
 
 ```yaml

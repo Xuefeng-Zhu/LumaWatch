@@ -170,6 +170,7 @@ test("HTML report recovers date ranges from Luma tech card text", async () => {
   const html = fs.readFileSync(config.reports.path, "utf8");
   assert.match(html, /Costa Rica Tech Week 2026/);
   assert.match(html, /5\/16 — 5\/24/);
+  assert.match(html, /<strong>5\/16 — 5\/24<\/strong>/);
   assert.doesNotMatch(html, /<strong>TBD<\/strong>/);
   db.close();
 });

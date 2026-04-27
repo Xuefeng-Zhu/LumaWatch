@@ -216,11 +216,12 @@ function dateBadge(event) {
 
   const numeric = usableDate.match(/\b(\d{1,2}\/\d{1,2})\b/);
   if (numeric) {
+    const isRange = /\b\d{1,2}\/\d{1,2}\s*(—|-|to)\s*\d{1,2}\/\d{1,2}\b/.test(usableDate);
     return `
-      <div class="event-date" title="${display(usableDate)}">
+      <div class="event-date ${isRange ? "event-date--range" : ""}" title="${display(usableDate)}">
         <span>Date</span>
-        <strong>${display(numeric[1])}</strong>
-        <small>${display(usableDate)}</small>
+        <strong>${display(isRange ? usableDate : numeric[1])}</strong>
+        <small>${display(isRange ? "Range" : usableDate)}</small>
       </div>
     `;
   }
@@ -535,6 +536,11 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
       line-height: 1;
       margin: 3px 0;
     }
+    .event-date--range strong {
+      font-size: 14px;
+      line-height: 1.2;
+      word-break: keep-all;
+    }
     .event-date small {
       color: var(--muted);
       font-size: 11px;
@@ -632,6 +638,8 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
       .event-row { align-items: flex-start; gap: 12px; }
       .event-date { flex-basis: 64px; min-height: 68px; }
       .event-date strong { font-size: 22px; }
+      .event-date--range { flex-basis: 90px; }
+      .event-date--range strong { font-size: 12px; }
       .status-chip, .open-link { display: inline-block; margin-top: 12px; }
       .table-wrap { overflow-x: auto; }
       table { min-width: 760px; }

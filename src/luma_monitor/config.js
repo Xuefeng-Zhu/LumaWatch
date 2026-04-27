@@ -54,7 +54,7 @@ export const defaultConfig = {
     scroll_steps: 6,
     scroll_pause_ms: 1200,
     user_agent: null,
-    enrich_details: true,
+    enrich_details: false,
     detail_delay_ms: 1500
   },
   polling: {
