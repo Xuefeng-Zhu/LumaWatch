@@ -7,6 +7,23 @@ import { extractEventId, normalizeLumaEventUrl } from "./url.js";
 const MONTH_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|today|tomorrow|mon|tue|wed|thu|fri|sat|sun)\b/i;
 const TIME_RE = /\b([01]?\d|2[0-3])(:\d{2})?\s?(am|pm|AM|PM)?\b/;
 const STATUS_RE = /\b(waitlist|sold out|registration closed|near capacity|cancelled|canceled|full)\b/i;
+const DATE_RE = /\b(today|tomorrow|mon|tue|wed|thu|fri|sat|sun)\b|(\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b)|(\b\d{1,2}\/\d{1,2}(\s*(—|-|to)\s*\d{1,2}\/\d{1,2})?\b)/i;
+
+function isStatusOnlyLine(line) {
+  return /^(happening now|live now|starting soon)$/i.test(line.trim());
+}
+
+function isDateLikeLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || isStatusOnlyLine(trimmed)) return false;
+  if (DATE_RE.test(trimmed)) return true;
+  return false;
+}
+
+function isTimeOnlyLine(line) {
+  const trimmed = line.trim();
+  return TIME_RE.test(trimmed) && !isDateLikeLine(trimmed);
+}
 
 function parseCardFields(candidate, config) {
   const lines = (candidate.cardText || "")
@@ -15,11 +32,17 @@ function parseCardFields(candidate, config) {
     .filter(Boolean)
     .filter((line, index, arr) => arr.indexOf(line) === index);
 
-  const dateText = lines.find((line) => MONTH_RE.test(line) || TIME_RE.test(line));
+  const dateIndex = lines.findIndex((line) => isDateLikeLine(line));
+  const dateText = dateIndex >= 0
+    ? [
+        lines[dateIndex],
+        isTimeOnlyLine(lines[dateIndex + 1] || "") ? lines[dateIndex + 1] : null
+      ].filter(Boolean).join(", ")
+    : null;
   const locationText = lines.find((line) =>
     (config.location?.nearby_terms || []).some((term) => line.toLowerCase().includes(term.toLowerCase()))
   );
-  const statusText = lines.find((line) => STATUS_RE.test(line));
+  const statusText = lines.find((line) => STATUS_RE.test(line) || isStatusOnlyLine(line));
   const title = candidate.linkText || lines.find((line) => line !== dateText && line !== locationText && line !== statusText);
 
   return {

@@ -41,8 +41,24 @@ function eventTitle(event) {
   return event.title || "Untitled event";
 }
 
-function eventDateText(event) {
+function rawEventDateText(event) {
   return event.dateText || event.date_text || "";
+}
+
+function hasUsableDateSignal(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  if (/^(happening now|live now|starting soon)$/i.test(text)) return false;
+  if (/^\d{1,2}:\d{2}\s*(am|pm)?\s*([A-Z]{2,4})?$/i.test(text)) return false;
+  return /\b(today|tomorrow|mon|tue|wed|thu|fri|sat|sun)\b/i.test(text)
+    || /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/i.test(text)
+    || /\b\d{1,2}\/\d{1,2}(\s*(—|-|to)\s*\d{1,2}\/\d{1,2})?\b/.test(text)
+    || /\b\d{4}-\d{2}-\d{2}\b/.test(text);
+}
+
+function eventDateText(event) {
+  const raw = rawEventDateText(event);
+  return hasUsableDateSignal(raw) ? raw : "";
 }
 
 function parseEventDateMs(event) {
@@ -52,7 +68,10 @@ function parseEventDateMs(event) {
   const currentYear = new Date().getFullYear();
   const candidates = /\b\d{4}\b/.test(text)
     ? [text]
-    : [text, `${text} ${currentYear}`, text.replace(/^([A-Za-z]+\.?\s+\d{1,2})\b/, `$1, ${currentYear}`)];
+    : [
+        text.replace(/^([A-Za-z]+\.?\s+\d{1,2})(,)?\s*/, `$1, ${currentYear}, `),
+        `${text} ${currentYear}`
+      ];
 
   for (const candidate of candidates) {
     const parsed = Date.parse(candidate);
@@ -78,14 +97,15 @@ function compareEventDates(a, b) {
 }
 
 function dateBadge(event) {
-  const rawDate = eventDateText(event);
+  const rawDate = rawEventDateText(event);
+  const usableDate = eventDateText(event);
   const parsedMs = parseEventDateMs(event);
   if (!Number.isFinite(parsedMs)) {
     return `
       <div class="event-date">
         <span>Date</span>
         <strong>TBD</strong>
-        <small>${display(rawDate, "Unknown")}</small>
+        <small>${display(usableDate, "Unknown")}</small>
       </div>
     `;
   }

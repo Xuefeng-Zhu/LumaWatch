@@ -105,6 +105,39 @@ test("HTML report sorts events by event date", async () => {
   db.close();
 });
 
+test("HTML report does not treat time-only text as an event date", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const timeOnly = aiSeattleEvent({
+    eventUrl: "https://luma.com/time-only-ai-seattle",
+    canonicalUrl: "https://luma.com/time-only-ai-seattle",
+    title: "Time Only Seattle AI Meetup",
+    dateText: "8:54 AM PDT"
+  });
+  const dated = aiSeattleEvent({
+    eventUrl: "https://luma.com/dated-ai-seattle",
+    canonicalUrl: "https://luma.com/dated-ai-seattle",
+    title: "Dated Seattle AI Meetup",
+    dateText: "May 5, 2026, 6:00 PM"
+  });
+
+  await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: [timeOnly, dated] }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  const html = fs.readFileSync(config.reports.path, "utf8");
+  assert.ok(
+    html.indexOf("Dated Seattle AI Meetup") < html.indexOf("Time Only Seattle AI Meetup"),
+    "expected real dated event to appear before time-only event"
+  );
+  assert.doesNotMatch(html, /<span><strong>Date<\/strong>8:54 AM PDT<\/span>/);
+  assert.match(html, /<strong>TBD<\/strong>/);
+  db.close();
+});
+
 test("dedupe prevents duplicate notifications across check runs", async () => {
   const config = testConfig();
   const db = makeDb(config);
