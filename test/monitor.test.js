@@ -105,6 +105,30 @@ test("HTML report sorts events by event date", async () => {
   db.close();
 });
 
+test("HTML report renders every matching event seen in the current run", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const events = Array.from({ length: 25 }, (_, index) => aiSeattleEvent({
+    eventUrl: `https://luma.com/current-run-ai-seattle-${index}`,
+    canonicalUrl: `https://luma.com/current-run-ai-seattle-${index}`,
+    title: `Current Run Seattle AI Meetup ${index}`,
+    dateText: `May ${index + 1}, 2026, 6:00 PM`
+  }));
+
+  await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: events }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  const html = fs.readFileSync(config.reports.path, "utf8");
+  for (const event of events) {
+    assert.match(html, new RegExp(event.title));
+  }
+  db.close();
+});
+
 test("HTML report does not treat time-only text as an event date", async () => {
   const config = testConfig();
   const db = makeDb(config);
@@ -134,7 +158,31 @@ test("HTML report does not treat time-only text as an event date", async () => {
     "expected real dated event to appear before time-only event"
   );
   assert.doesNotMatch(html, /<span><strong>Date<\/strong>8:54 AM PDT<\/span>/);
-  assert.match(html, /<strong>TBD<\/strong>/);
+  db.close();
+});
+
+test("HTML report shows date in metadata without a badge", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const event = aiSeattleEvent({
+    eventUrl: "https://luma.com/no-duplicate-date-ai-seattle",
+    canonicalUrl: "https://luma.com/no-duplicate-date-ai-seattle",
+    title: "No Duplicate Date Seattle AI Meetup",
+    dateText: "Today, 2:00 PM",
+    locationText: "Seattle, WA"
+  });
+
+  await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: [event] }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  const html = fs.readFileSync(config.reports.path, "utf8");
+  assert.match(html, /<span><strong>Date<\/strong>Today, 2:00 PM<\/span>/);
+  assert.doesNotMatch(html, /<div class="event-date"/);
+  assert.match(html, /<span><strong>Where<\/strong>Seattle, WA<\/span>/);
   db.close();
 });
 
@@ -170,7 +218,7 @@ test("HTML report recovers date ranges from Luma tech card text", async () => {
   const html = fs.readFileSync(config.reports.path, "utf8");
   assert.match(html, /Costa Rica Tech Week 2026/);
   assert.match(html, /5\/16 — 5\/24/);
-  assert.match(html, /<strong>5\/16 — 5\/24<\/strong>/);
+  assert.match(html, /<span><strong>Date<\/strong>5\/16 — 5\/24<\/span>/);
   assert.doesNotMatch(html, /<strong>TBD<\/strong>/);
   db.close();
 });

@@ -201,52 +201,6 @@ function compareEventDates(a, b) {
   return eventTitle(a).localeCompare(eventTitle(b));
 }
 
-function dateBadge(event) {
-  const usableDate = eventDateText(event);
-  const parsedMs = parseEventDateMs(event);
-  if (!Number.isFinite(parsedMs)) {
-    return `
-      <div class="event-date">
-        <span>Date</span>
-        <strong>TBD</strong>
-        <small>${display(usableDate, "Unknown")}</small>
-      </div>
-    `;
-  }
-
-  const numeric = usableDate.match(/\b(\d{1,2}\/\d{1,2})\b/);
-  if (numeric) {
-    const isRange = /\b\d{1,2}\/\d{1,2}\s*(—|-|to)\s*\d{1,2}\/\d{1,2}\b/.test(usableDate);
-    return `
-      <div class="event-date ${isRange ? "event-date--range" : ""}" title="${display(usableDate)}">
-        <span>Date</span>
-        <strong>${display(isRange ? usableDate : numeric[1])}</strong>
-        <small>${display(isRange ? "Range" : usableDate)}</small>
-      </div>
-    `;
-  }
-
-  const named = usableDate.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})/i);
-  const time = parseTimeParts(usableDate);
-  if (named) {
-    return `
-      <div class="event-date" title="${display(usableDate)}">
-        <span>${display(named[1].slice(0, 3))}</span>
-        <strong>${display(named[2])}</strong>
-        <small>${display(time.label || usableDate)}</small>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="event-date" title="${display(usableDate)}">
-      <span>Date</span>
-      <strong>${display(usableDate)}</strong>
-      <small>${display(usableDate)}</small>
-    </div>
-  `;
-}
-
 function eventMeta(event) {
   const items = [
     { label: "Date", value: eventDateText(event) },
@@ -266,7 +220,6 @@ function card(event, options = {}) {
   const score = event.matchScore ?? event.match_score;
   return `
     <article class="event-row ${options.highlight ? "event-row--highlight" : ""}">
-      ${dateBadge(event)}
       <div class="event-main">
         <div class="event-kicker">
           <span>${display(source)}</span>
@@ -339,9 +292,8 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
   const newEvents = sortEventsByDate(runEvents.newEvents || []);
   const keptEvents = sortEventsByDate(runEvents.keptEvents || []);
   const skippedEvents = runEvents.skippedEvents || [];
-  const skippedPreview = [...skippedEvents]
-    .sort((a, b) => compareEventDates(a.event, b.event))
-    .slice(0, 12);
+  const sortedSkippedEvents = [...skippedEvents]
+    .sort((a, b) => compareEventDates(a.event, b.event));
   const hasSourceErrors = sources.some((source) => source.last_error);
   const noCurrentCandidates = stats.sourcesChecked > 0 && stats.candidates === 0;
   const statusTone = stats.newEvents > 0 ? "new" : hasSourceErrors || noCurrentCandidates ? "warning" : "quiet";
@@ -510,42 +462,6 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
       align-items: center;
     }
     .event-row--highlight { border-color: #5eead4; box-shadow: inset 4px 0 0 var(--accent); }
-    .event-date {
-      flex: 0 0 76px;
-      align-self: stretch;
-      display: grid;
-      align-content: center;
-      justify-items: center;
-      border: 1px solid var(--soft-line);
-      border-radius: 8px;
-      background: #f9fafb;
-      color: var(--ink);
-      min-height: 76px;
-      padding: 8px 6px;
-      text-align: center;
-    }
-    .event-date span {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 750;
-      text-transform: uppercase;
-    }
-    .event-date strong {
-      display: block;
-      font-size: 25px;
-      line-height: 1;
-      margin: 3px 0;
-    }
-    .event-date--range strong {
-      font-size: 14px;
-      line-height: 1.2;
-      word-break: keep-all;
-    }
-    .event-date small {
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.2;
-    }
     .event-main {
       flex: 1 1 auto;
       min-width: 0;
@@ -636,10 +552,6 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .status, .section-header { display: block; }
       .event-row { align-items: flex-start; gap: 12px; }
-      .event-date { flex-basis: 64px; min-height: 68px; }
-      .event-date strong { font-size: 22px; }
-      .event-date--range { flex-basis: 90px; }
-      .event-date--range strong { font-size: 12px; }
       .status-chip, .open-link { display: inline-block; margin-top: 12px; }
       .table-wrap { overflow-x: auto; }
       table { min-width: 760px; }
@@ -686,7 +598,7 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
 
     <section id="seen">
       ${sectionHeader("Matching Events Seen This Run", keptEvents.length, "These matched the Seattle AI/tech filter and were recorded as seen. Sorted by event date, soonest first.")}
-      ${keptEvents.length ? `<div class="event-list">${keptEvents.slice(0, 20).map((event) => card(event)).join("")}</div>` : `<div class="empty">No matching events were kept in this run.</div>`}
+      ${keptEvents.length ? `<div class="event-list">${keptEvents.map((event) => card(event)).join("")}</div>` : `<div class="empty">No matching events were kept in this run.</div>`}
     </section>
 
     <details>
@@ -696,13 +608,13 @@ export function renderHtmlReport({ config, db, stats, runEvents }) {
     </details>
 
     <details>
-      <summary>Skipped Candidates (${display(skippedPreview.length, 0)})</summary>
-      ${skippedPreview.length ? `<div class="event-list">${skippedPreview.map((item) => `
+      <summary>Skipped Candidates (${display(sortedSkippedEvents.length, 0)})</summary>
+      ${sortedSkippedEvents.length ? `<div class="event-list">${sortedSkippedEvents.map((item) => `
         <article class="event-row">
-          ${dateBadge(item.event)}
           <div class="event-main">
             <div class="event-kicker"><span>${display(item.event?.sourceName, "source")}</span><span>score ${display(item.score, 0)}</span></div>
             <a class="event-title" href="${escapeHtml(eventUrl(item.event))}" target="_blank" rel="noreferrer">${display(eventTitle(item.event), "Untitled event")}</a>
+            ${eventMeta(item.event)}
             <div class="event-meta"><span>${display(item.reasons?.join("; "), "No reason")}</span></div>
           </div>
           <a class="open-link" href="${escapeHtml(eventUrl(item.event))}" target="_blank" rel="noreferrer">Open</a>
