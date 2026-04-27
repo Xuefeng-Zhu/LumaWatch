@@ -12,6 +12,7 @@ test("URL normalization strips query strings and hashes", () => {
 test("non-event links are excluded", () => {
   assert.equal(isLumaEventUrl("https://luma.com/ai"), false);
   assert.equal(isLumaEventUrl("https://luma.com/tech"), false);
+  assert.equal(isLumaEventUrl("https://luma.com/category/tech"), false);
   assert.equal(isLumaEventUrl("https://luma.com/seattle"), false);
   assert.equal(isLumaEventUrl("https://luma.com/ios"), false);
   assert.equal(isLumaEventUrl("https://luma.com/android"), false);

@@ -62,3 +62,19 @@ test("parseCardFields does not treat numeric event titles as time-only text", ()
   assert.equal(parsed.title, "Nearby AI Event 10");
   assert.equal(parsed.dateText, "May 20, 6:00 PM");
 });
+
+test("parseCardFields does not treat Full Stack titles as status text", () => {
+  const parsed = parseCardFields({
+    href: "https://luma.com/full-stack-ai-night",
+    linkText: [
+      "Full Stack AI Night",
+      "May 21, 6:00 PM",
+      "Seattle, WA",
+      "Waitlist"
+    ].join("\n")
+  }, defaultConfig);
+
+  assert.equal(parsed.title, "Full Stack AI Night");
+  assert.equal(parsed.dateText, "May 21, 6:00 PM");
+  assert.equal(parsed.statusText, "Waitlist");
+});

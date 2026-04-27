@@ -129,7 +129,9 @@ export function buildNotifiers(config, env = process.env, logger) {
 }
 
 export async function notifyAll(event, notifiers, db, logger) {
+  const summary = { attempted: 0, sent: 0, failed: 0 };
   for (const notifier of notifiers) {
+    summary.attempted += 1;
     try {
       const result = await notifier.send(event);
       db.insertNotification({
@@ -139,8 +141,10 @@ export async function notifyAll(event, notifiers, db, logger) {
         status: result.status,
         payload: result.payload
       });
+      if (result.status === "sent") summary.sent += 1;
       logger?.info("Notification sent", { event_key: event.eventKey, channel: notifier.channel });
     } catch (error) {
+      summary.failed += 1;
       db.insertNotification({
         eventKey: event.eventKey,
         channel: notifier.channel,
@@ -156,4 +160,5 @@ export async function notifyAll(event, notifiers, db, logger) {
       });
     }
   }
+  return summary;
 }

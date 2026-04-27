@@ -251,8 +251,40 @@ test("dedupe prevents duplicate notifications across check runs", async () => {
   await runMonitor(config, { mode: "check", db, extractor, notifiers: [notifier] });
   await runMonitor(config, { mode: "check", db, extractor, notifiers: [notifier] });
 
+  const seen = db.getSeen("https://luma.com/new-ai-summit-seattle");
   assert.equal(notifier.events.length, 1);
   assert.equal(db.countSeen(), 1);
   assert.equal(db.countNotifications(), 1);
+  assert.notEqual(seen.first_notified_at, null);
+  db.close();
+});
+
+test("failed notifications do not mark an event as notified", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const event = aiSeattleEvent({
+    eventUrl: "https://luma.com/failing-notification-ai-seattle",
+    canonicalUrl: "https://luma.com/failing-notification-ai-seattle",
+    title: "Failing Notification Seattle AI Meetup"
+  });
+  const failingNotifier = {
+    channel: "failing",
+    async send() {
+      throw new Error("delivery broke");
+    }
+  };
+
+  const stats = await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: [event] }),
+    notifiers: [failingNotifier]
+  });
+
+  const seen = db.getSeen("https://luma.com/failing-notification-ai-seattle");
+  assert.equal(stats.notificationsAttempted, 1);
+  assert.equal(db.countSeen(), 1);
+  assert.equal(db.countNotifications(), 1);
+  assert.equal(seen.first_notified_at, null);
   db.close();
 });

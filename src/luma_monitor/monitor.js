@@ -98,9 +98,12 @@ export async function runMonitor(config, options = {}) {
 
           stats.newEvents += 1;
           runEvents.newEvents.push(event);
-          db.upsertSeen(event, { now: checkedAt, notified: true });
-          await notifyAll(event, notifiers, db, logger);
-          stats.notificationsAttempted += notifiers.length;
+          db.upsertSeen(event, { now: checkedAt, notified: false });
+          const notificationSummary = await notifyAll(event, notifiers, db, logger);
+          stats.notificationsAttempted += notificationSummary.attempted;
+          if (notificationSummary.sent > 0) {
+            db.upsertSeen(event, { now: checkedAt, notified: true });
+          }
         }
 
         db.markSourceChecked(source.name, {

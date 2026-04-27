@@ -6,11 +6,15 @@ import { extractEventId, normalizeLumaEventUrl } from "./url.js";
 
 const MONTH_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|today|tomorrow|mon|tue|wed|thu|fri|sat|sun)\b/i;
 const TIME_RE = /\b([01]?\d|2[0-3])(:\d{2})?\s?(am|pm|AM|PM)?\b/;
-const STATUS_RE = /\b(waitlist|sold out|registration closed|near capacity|cancelled|canceled|full)\b/i;
+const STATUS_RE = /^(?:status\s*:?\s*)?(waitlist|sold out|registration closed|near capacity|cancelled|canceled|full)$/i;
 const DATE_RE = /\b(today|tomorrow|mon|tue|wed|thu|fri|sat|sun)\b|(\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b)|(\b\d{1,2}\/\d{1,2}(\s*(—|-|to)\s*\d{1,2}\/\d{1,2})?\b)/i;
 
 function isStatusOnlyLine(line) {
   return /^(happening now|live now|starting soon)$/i.test(line.trim());
+}
+
+function isStatusLine(line) {
+  return isStatusOnlyLine(line) || STATUS_RE.test(line.trim());
 }
 
 function isDateLikeLine(line) {
@@ -37,8 +41,7 @@ function titleLineFrom(lines) {
   return lines.find((line) =>
     !isDateLikeLine(line)
     && !isTimeOnlyLine(line)
-    && !isStatusOnlyLine(line)
-    && !STATUS_RE.test(line)
+    && !isStatusLine(line)
     && !/^\d+\s*Events?\b/i.test(line)
     && !/^\d+\s*Subscribers?\b/i.test(line)
     && !/^Subscribe$/i.test(line)
@@ -96,7 +99,7 @@ export function parseCardFields(candidate, config) {
   const locationText = [...linkLines, ...cardLines].find((line) =>
     (config.location?.nearby_terms || []).some((term) => line.toLowerCase().includes(term.toLowerCase()))
   );
-  const statusText = [...linkLines, ...cardLines].find((line) => STATUS_RE.test(line) || isStatusOnlyLine(line));
+  const statusText = [...linkLines, ...cardLines].find((line) => isStatusLine(line));
 
   return {
     ...candidate,
@@ -483,7 +486,10 @@ export class LumaExtractor {
               || bodyText.split(/\n+/).slice(0, 12).join("\n");
             const dateText = document.querySelector("time")?.innerText?.trim()
               || document.querySelector("time")?.getAttribute("datetime");
-            const statusText = (bodyText.match(/\b(Waitlist|Sold Out|Registration Closed|Near Capacity|Cancelled|Canceled|Full)\b/i) || [])[0] || null;
+            const statusText = bodyText
+              .split(/\n+/)
+              .map((line) => line.trim())
+              .find((line) => /^(?:status\s*:?\s*)?(Waitlist|Sold Out|Registration Closed|Near Capacity|Cancelled|Canceled|Full)$/i.test(line)) || null;
             return { title, descriptionText: description, dateText, detailText: bodyText.slice(0, 6000), statusText };
           });
           enriched.push(parseCardFields({ ...candidate, ...detail }, this.config));

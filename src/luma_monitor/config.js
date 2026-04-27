@@ -94,6 +94,12 @@ function envBool(value) {
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
+function envPositiveNumber(value) {
+  if (value == null || value === "") return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : undefined;
+}
+
 export function loadConfig(configPath = "config.yaml", env = process.env) {
   let fileConfig = {};
   if (fs.existsSync(configPath)) {
@@ -103,8 +109,8 @@ export function loadConfig(configPath = "config.yaml", env = process.env) {
 
   if (env.LUMA_DATABASE_PATH) config.database.path = env.LUMA_DATABASE_PATH;
   if (env.LUMA_TARGET_CITY) config.location.target_city = env.LUMA_TARGET_CITY;
-  if (env.LUMA_TIMEOUT_MS) config.browser.timeout_ms = Number(env.LUMA_TIMEOUT_MS);
-  if (env.LUMA_SCROLL_STEPS) config.browser.scroll_steps = Number(env.LUMA_SCROLL_STEPS);
+  config.browser.timeout_ms = envPositiveNumber(env.LUMA_TIMEOUT_MS) ?? config.browser.timeout_ms;
+  config.browser.scroll_steps = envPositiveNumber(env.LUMA_SCROLL_STEPS) ?? config.browser.scroll_steps;
   if (env.LUMA_USER_AGENT) config.browser.user_agent = env.LUMA_USER_AGENT;
   if (env.LUMA_REPORT_PATH) config.reports.path = env.LUMA_REPORT_PATH;
   const reportsEnabled = envBool(env.LUMA_REPORTS_ENABLED);

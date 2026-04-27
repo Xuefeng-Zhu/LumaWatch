@@ -8,6 +8,7 @@ const NON_EVENT_SEGMENTS = new Set([
   "api",
   "calendar",
   "careers",
+  "category",
   "city",
   "create",
   "discover",
