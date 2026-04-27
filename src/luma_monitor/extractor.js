@@ -122,29 +122,21 @@ async function extractCandidatesFromPage(page, source, config) {
       }
     }
 
+    function isSectionBoundary(element) {
+      return element.matches?.(".section-title-wrapper")
+        || element.matches?.("h2.section-title")
+        || Boolean(element.querySelector?.(":scope > .section-title-wrapper, :scope > h2.section-title"));
+    }
+
     function nearbyEventAnchors() {
       const headings = Array.from(document.querySelectorAll("h2.section-title"))
         .filter((heading) => normalizeText(heading.innerText || heading.textContent) === "nearby events");
       const anchors = new Set();
 
       for (const heading of headings) {
-        let scoped = false;
-        let node = heading.parentElement;
-        for (let depth = 0; depth < 5 && node && node !== document.body; depth += 1) {
-          const hasLinks = node.querySelectorAll("a[href]").length > 0;
-          const sectionTitleCount = node.querySelectorAll("h2.section-title").length;
-          if (hasLinks && sectionTitleCount === 1) {
-            addLinksFrom(node, anchors);
-            scoped = true;
-            break;
-          }
-          node = node.parentElement;
-        }
-
-        if (scoped) continue;
-
-        let sibling = heading.nextElementSibling;
-        while (sibling && !sibling.matches?.("h2.section-title")) {
+        const titleWrapper = heading.closest(".section-title-wrapper") || heading.parentElement;
+        let sibling = titleWrapper?.nextElementSibling;
+        while (sibling && !isSectionBoundary(sibling)) {
           addLinksFrom(sibling, anchors);
           sibling = sibling.nextElementSibling;
         }
@@ -260,13 +252,6 @@ export class LumaExtractor {
       }
 
       const rawCandidates = await extractCandidatesFromPage(page, source, this.config);
-      if (rawCandidates.length === 0) {
-        this.logger?.warn("No Nearby Events section candidates found", {
-          source: source.name,
-          heading_selector: "h2.section-title",
-          heading_text: "Nearby Events"
-        });
-      }
       const byUrl = new Map();
       for (const candidate of rawCandidates) {
         const canonicalUrl = normalizeLumaEventUrl(candidate.href);
@@ -281,6 +266,14 @@ export class LumaExtractor {
       }
 
       const candidates = Array.from(byUrl.values());
+      if (candidates.length === 0) {
+        this.logger?.warn("No Luma event links found in Nearby Events section", {
+          source: source.name,
+          heading_selector: "h2.section-title",
+          heading_text: "Nearby Events",
+          nearby_links_seen: rawCandidates.length
+        });
+      }
       this.logger?.info("Extracted Luma event candidates", {
         source: source.name,
         count: candidates.length
