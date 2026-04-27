@@ -5,6 +5,9 @@ sources:
   - name: luma-tech
     url: https://luma.com/tech
     type: category_page
+  - name: luma-food
+    url: https://luma.com/food
+    type: category_page
   - name: luma-seattle
     url: https://luma.com/seattle
     type: city_page
