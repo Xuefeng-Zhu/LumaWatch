@@ -95,6 +95,7 @@ export function scoreEvent(event, config) {
   const hasNearbySignal = nearbyMatches.length > 0
     || sourceLooksTargetCity
     || (event.foundInNearbySection && nonTargetCityMatches.length === 0);
+  const hasRelevanceSignal = aiMatches.length > 0 || techMatches.length > 0;
 
   if (sourceLooksRelevant && event.foundInNearbySection && excludeMatches.length === 0) {
     score = Math.max(score, 2);
@@ -114,7 +115,9 @@ export function scoreEvent(event, config) {
   if (!reasons.length) reasons.push("no configured terms matched");
 
   return {
-    keep: hasNearbySignal && score >= 2,
+    keep: excludeMatches.length === 0
+      && (sourceLooksRelevant ? score >= 1 : score >= 2)
+      && (hasNearbySignal || hasRelevanceSignal || sourceLooksRelevant),
     score,
     reasons,
     why: reasons.join("; ")

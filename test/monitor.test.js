@@ -198,7 +198,7 @@ test("HTML report labels stored events as historical when current run has no can
   });
 
   const html = fs.readFileSync(config.reports.path, "utf8");
-  assert.match(html, /No Nearby Events found this run/);
+  assert.match(html, /No event links found this run/);
   assert.match(html, /Historical Database Events/);
   assert.match(html, /not current run results/);
   db.close();

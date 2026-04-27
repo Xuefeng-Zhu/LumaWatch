@@ -222,6 +222,12 @@ async function extractCandidatesFromPage(page, source, config) {
       return Array.from(anchors);
     }
 
+    function pageEventAnchors() {
+      return Array.from(document.querySelectorAll("a[href]"))
+        .filter((anchor) => lumaLikeEventHref(anchor.href))
+        .filter((anchor) => !anchor.closest("nav, footer"));
+    }
+
     function textFor(anchor) {
       let node = anchor;
       let best = anchor.innerText || anchor.textContent || "";
@@ -276,17 +282,19 @@ async function extractCandidatesFromPage(page, source, config) {
       return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
-    return nearbyEventAnchors().map((anchor) => {
+    const nearbyAnchors = new Set(nearbyEventAnchors());
+    return pageEventAnchors().map((anchor) => {
       const href = anchor.href;
       const cardText = textFor(anchor);
       const sectionText = nearbyContextText(anchor);
       const targetCity = escapeRegExp(sourceInput.targetCity || "Seattle");
       const nearbyPattern = new RegExp(`\\b(nearby|near you|near ${targetCity}|in ${targetCity}|${targetCity})\\b`, "i");
+      const foundInNearbySection = nearbyAnchors.has(anchor);
       return {
         href,
         linkText: (anchor.innerText || anchor.textContent || "").trim(),
         cardText,
-        foundInNearbySection: true,
+        foundInNearbySection,
         nearbySectionMatched: nearbyPattern.test(`${cardText}\n${sectionText}`),
         sourceName: sourceInput.name,
         sourceUrl: sourceInput.url,
@@ -355,11 +363,9 @@ export class LumaExtractor {
 
       const candidates = Array.from(byUrl.values());
       if (candidates.length === 0) {
-        this.logger?.warn("No Luma event links found in Nearby Events section", {
+        this.logger?.warn("No Luma event links found on page", {
           source: source.name,
-          heading_selector: "h2.section-title",
-          heading_text: "Nearby Events",
-          nearby_links_seen: rawCandidates.length
+          links_seen: rawCandidates.length
         });
       }
       this.logger?.info("Extracted Luma event candidates", {
