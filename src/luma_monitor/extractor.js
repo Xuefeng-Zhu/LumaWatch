@@ -25,30 +25,83 @@ function isTimeOnlyLine(line) {
   return TIME_RE.test(trimmed) && !isDateLikeLine(trimmed);
 }
 
-function parseCardFields(candidate, config) {
-  const lines = (candidate.cardText || "")
+function uniqueLines(value) {
+  return (value || "")
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean)
     .filter((line, index, arr) => arr.indexOf(line) === index);
+}
 
+function titleLineFrom(lines) {
+  return lines.find((line) =>
+    !isDateLikeLine(line)
+    && !isTimeOnlyLine(line)
+    && !isStatusOnlyLine(line)
+    && !STATUS_RE.test(line)
+    && !/\b\d+\s*Events?\b/i.test(line)
+    && !/\b\d+\s*Subscribers?\b/i.test(line)
+    && !/^Subscribe$/i.test(line)
+  );
+}
+
+function normalizedText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function titleLineIndex(lines, title) {
+  const normalizedTitle = normalizedText(title);
+  if (!normalizedTitle) return -1;
+  let index = lines.findIndex((line) => normalizedText(line) === normalizedTitle);
+  if (index >= 0) return index;
+  index = lines.findIndex((line) => normalizedText(line).includes(normalizedTitle));
+  if (index >= 0) return index;
+  return lines.findIndex((line) => {
+    const normalizedLine = normalizedText(line);
+    return normalizedLine.length >= 8 && normalizedTitle.includes(normalizedLine);
+  });
+}
+
+function dateWithFollowingTime(lines, index) {
+  if (index < 0) return null;
+  return [
+    lines[index],
+    isTimeOnlyLine(lines[index + 1] || "") ? lines[index + 1] : null
+  ].filter(Boolean).join(", ");
+}
+
+function firstDateFrom(lines) {
   const dateIndex = lines.findIndex((line) => isDateLikeLine(line));
-  const dateText = dateIndex >= 0
-    ? [
-        lines[dateIndex],
-        isTimeOnlyLine(lines[dateIndex + 1] || "") ? lines[dateIndex + 1] : null
-      ].filter(Boolean).join(", ")
-    : null;
-  const locationText = lines.find((line) =>
+  return dateWithFollowingTime(lines, dateIndex);
+}
+
+function dateNearTitle(lines, title) {
+  const index = titleLineIndex(lines, title);
+  if (index < 0) return null;
+  const nearby = lines.slice(index + 1, index + 8);
+  return firstDateFrom(nearby);
+}
+
+export function parseCardFields(candidate, config) {
+  const linkLines = uniqueLines(candidate.linkText || "");
+  const cardLines = uniqueLines(candidate.cardText || "");
+  const title = candidate.title || titleLineFrom(linkLines) || titleLineFrom(cardLines) || null;
+  const dateText = isDateLikeLine(candidate.dateText || "")
+    ? candidate.dateText
+    : dateNearTitle(linkLines, title)
+      || firstDateFrom(linkLines)
+      || dateNearTitle(cardLines, title)
+      || firstDateFrom(cardLines);
+
+  const locationText = [...linkLines, ...cardLines].find((line) =>
     (config.location?.nearby_terms || []).some((term) => line.toLowerCase().includes(term.toLowerCase()))
   );
-  const statusText = lines.find((line) => STATUS_RE.test(line) || isStatusOnlyLine(line));
-  const title = candidate.linkText || lines.find((line) => line !== dateText && line !== locationText && line !== statusText);
+  const statusText = [...linkLines, ...cardLines].find((line) => STATUS_RE.test(line) || isStatusOnlyLine(line));
 
   return {
     ...candidate,
     title: candidate.title || title || null,
-    dateText: candidate.dateText || dateText || null,
+    dateText: dateText || null,
     locationText: candidate.locationText || locationText || null,
     statusText: candidate.statusText || statusText || null
   };
@@ -116,6 +169,30 @@ async function extractCandidatesFromPage(page, source, config) {
       return (value || "").replace(/\s+/g, " ").trim().toLowerCase();
     }
 
+    function canonicalHref(value) {
+      try {
+        const url = new URL(value, window.location.href);
+        url.hash = "";
+        url.search = "";
+        url.protocol = "https:";
+        url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+        url.pathname = url.pathname.replace(/\/+$/, "");
+        return url.toString();
+      } catch {
+        return "";
+      }
+    }
+
+    function lumaLikeEventHref(value) {
+      const normalized = canonicalHref(value);
+      if (!normalized) return "";
+      const url = new URL(normalized);
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (!["luma.com", "lu.ma"].includes(url.hostname)) return "";
+      if (parts.length === 0 || parts.length > 2) return "";
+      return normalized;
+    }
+
     function addLinksFrom(root, anchors) {
       for (const anchor of root.querySelectorAll?.("a[href]") || []) {
         anchors.add(anchor);
@@ -148,12 +225,23 @@ async function extractCandidatesFromPage(page, source, config) {
     function textFor(anchor) {
       let node = anchor;
       let best = anchor.innerText || anchor.textContent || "";
-      for (let depth = 0; depth < 5 && node; depth += 1) {
-        const candidate = node.closest?.("article, li, section, [role='article'], [data-testid*='event'], [class*='event'], [class*='card']") || node.parentElement;
+      const anchorEventHref = lumaLikeEventHref(anchor.href);
+      for (let depth = 0; depth < 5 && node?.parentElement; depth += 1) {
+        const candidate = node.parentElement;
         if (!candidate) break;
+        if (["BODY", "HTML", "NAV", "FOOTER"].includes(candidate.tagName || "")) break;
+        const eventHrefs = new Set(
+          Array.from(candidate.querySelectorAll?.("a[href]") || [])
+            .map((link) => lumaLikeEventHref(link.href))
+            .filter(Boolean)
+        );
+        if (eventHrefs.size > 1 || (eventHrefs.size === 1 && anchorEventHref && !eventHrefs.has(anchorEventHref))) {
+          node = candidate;
+          continue;
+        }
         const text = (candidate.innerText || candidate.textContent || "").replace(/\s+\n/g, "\n").trim();
         if (text.length > best.length && text.length < 4000) best = text;
-        node = candidate.parentElement;
+        node = candidate;
       }
       return best.trim();
     }

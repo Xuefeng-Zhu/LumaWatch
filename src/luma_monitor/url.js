@@ -13,6 +13,8 @@ const NON_EVENT_SEGMENTS = new Set([
   "discover",
   "explore",
   "home",
+  "android",
+  "ios",
   "login",
   "pricing",
   "privacy",
