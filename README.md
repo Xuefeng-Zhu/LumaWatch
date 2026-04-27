@@ -67,6 +67,24 @@ Run a normal check. This notifies only for unseen matching events:
 node src/cli.js check --config config.yaml
 ```
 
+Run with a visible Playwright browser window for debugging:
+
+```bash
+node src/cli.js check --config config.yaml --headed
+```
+
+`--headful` is also accepted as an alias. Use `--headless` to force headless mode for a single run, overriding `config.yaml` or `LUMA_HEADLESS`.
+
+Each `check` run also writes a static HTML report by default:
+
+```yaml
+reports:
+  enabled: true
+  path: ./reports/luma-report.html
+```
+
+The report includes run metrics, new events from the current run, matching events seen in the current run, recently seen events, skipped candidates, source health, and recent notification status. Override with `LUMA_REPORT_PATH` or disable with `LUMA_REPORTS_ENABLED=false`.
+
 If installed globally or run through `npx`, the equivalent command is:
 
 ```bash

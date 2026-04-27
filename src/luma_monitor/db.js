@@ -116,6 +116,33 @@ export class SeenDatabase {
     return this.db.prepare("select count(*) as count from notifications").get().count;
   }
 
+  listSources() {
+    return this.db.prepare(`
+      select name, url, type, enabled, last_checked_at, last_success_at, last_error
+      from sources
+      order by name
+    `).all();
+  }
+
+  listRecentSeen(limit = 20) {
+    return this.db.prepare(`
+      select event_key, event_url, canonical_url, title, source_name,
+        first_seen_at, last_seen_at, first_notified_at, fingerprint, raw_json
+      from seen_events
+      order by last_seen_at desc
+      limit ?
+    `).all(limit);
+  }
+
+  listRecentNotifications(limit = 20) {
+    return this.db.prepare(`
+      select event_key, channel, sent_at, status, error, payload_json
+      from notifications
+      order by sent_at desc
+      limit ?
+    `).all(limit);
+  }
+
   upsertSeen(event, options = {}) {
     const ts = options.now || nowIso();
     const eventKey = event.eventKey || eventKeyFor(event);

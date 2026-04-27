@@ -76,5 +76,9 @@ notifications:
     bot_token_env: TELEGRAM_BOT_TOKEN
     chat_id_env: TELEGRAM_CHAT_ID
 
+reports:
+  enabled: true
+  path: ./reports/luma-report.html
+
 database:
   path: ./luma_seen.sqlite

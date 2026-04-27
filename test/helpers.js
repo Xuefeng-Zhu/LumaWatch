@@ -8,6 +8,11 @@ export function tempDbPath() {
   return path.join(dir, "seen.sqlite");
 }
 
+export function tempReportPath() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "luma-watch-report-"));
+  return path.join(dir, "report.html");
+}
+
 export function testConfig(overrides = {}) {
   return {
     ...defaultConfig,
@@ -27,6 +32,10 @@ export function testConfig(overrides = {}) {
     },
     database: {
       path: overrides.database?.path || tempDbPath()
+    },
+    reports: {
+      enabled: overrides.reports?.enabled ?? true,
+      path: overrides.reports?.path || tempReportPath()
     }
   };
 }

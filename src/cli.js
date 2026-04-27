@@ -13,6 +13,10 @@ function parseArgs(argv) {
     if (arg === "--config" || arg === "-c") {
       args.config = argv[index + 1];
       index += 1;
+    } else if (arg === "--headed" || arg === "--headful") {
+      args.headed = true;
+    } else if (arg === "--headless") {
+      args.headless = true;
     }
   }
   return args;
@@ -21,13 +25,19 @@ function parseArgs(argv) {
 function printHelp() {
   console.log(`Usage:
   luma-monitor init-db --config config.yaml
-  luma-monitor baseline --config config.yaml
-  luma-monitor check --config config.yaml
+  luma-monitor baseline --config config.yaml [--headed]
+  luma-monitor check --config config.yaml [--headed]
 
 Commands:
   init-db   Create or migrate the SQLite schema and source rows.
   baseline  Discover current matching events and mark them seen without notifications.
-  check     Discover current matching events and notify only for unseen events.`);
+  check     Discover current matching events and notify only for unseen events.
+
+Options:
+  -c, --config <path>  Config file path. Defaults to config.yaml.
+  --headed            Run Playwright with a visible browser window.
+  --headful           Alias for --headed.
+  --headless          Force headless browser mode.`);
 }
 
 async function main() {
@@ -39,6 +49,8 @@ async function main() {
 
   const logger = createLogger();
   const config = loadConfig(args.config);
+  if (args.headed) config.browser.headless = false;
+  if (args.headless) config.browser.headless = true;
 
   if (args.command === "init-db") {
     const db = await initDatabase(config, logger);

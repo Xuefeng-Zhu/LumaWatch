@@ -1,6 +1,7 @@
 import { SeenDatabase } from "./db.js";
 import { scoreEvent } from "./filter.js";
 import { buildNotifiers, notifyAll } from "./notifications.js";
+import { writeHtmlReport } from "./report.js";
 import { nowIso } from "./time.js";
 import { eventFingerprint, eventKeyFor } from "./url.js";
 
@@ -42,6 +43,11 @@ export async function runMonitor(config, options = {}) {
     newEvents: 0,
     notificationsAttempted: 0
   };
+  const runEvents = {
+    newEvents: [],
+    keptEvents: [],
+    skippedEvents: []
+  };
 
   try {
     for (const source of config.sources || []) {
@@ -63,6 +69,11 @@ export async function runMonitor(config, options = {}) {
 
           if (!scored.keep) {
             stats.skipped += 1;
+            runEvents.skippedEvents.push({
+              event,
+              score: scored.score,
+              reasons: scored.reasons
+            });
             logger?.info("Skipped event candidate", {
               source: source.name,
               url: event.canonicalUrl || event.eventUrl,
@@ -73,6 +84,7 @@ export async function runMonitor(config, options = {}) {
           }
 
           stats.kept += 1;
+          runEvents.keptEvents.push(event);
           const existing = db.getSeen(event.eventKey);
           if (mode === "baseline") {
             db.upsertSeen(event, { now: checkedAt, notified: false });
@@ -85,6 +97,7 @@ export async function runMonitor(config, options = {}) {
           }
 
           stats.newEvents += 1;
+          runEvents.newEvents.push(event);
           db.upsertSeen(event, { now: checkedAt, notified: true });
           await notifyAll(event, notifiers, db, logger);
           stats.notificationsAttempted += notifiers.length;
@@ -106,6 +119,9 @@ export async function runMonitor(config, options = {}) {
           error: error.message
         });
       }
+    }
+    if (mode === "check") {
+      stats.reportPath = writeHtmlReport({ config, db, stats, runEvents, logger });
     }
     logger?.info("Monitor run complete", stats);
     return stats;

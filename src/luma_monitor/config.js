@@ -70,6 +70,10 @@ export const defaultConfig = {
       chat_id_env: "TELEGRAM_CHAT_ID"
     }
   },
+  reports: {
+    enabled: true,
+    path: "./reports/luma-report.html"
+  },
   database: {
     path: "./luma_seen.sqlite"
   }
@@ -102,6 +106,9 @@ export function loadConfig(configPath = "config.yaml", env = process.env) {
   if (env.LUMA_TIMEOUT_MS) config.browser.timeout_ms = Number(env.LUMA_TIMEOUT_MS);
   if (env.LUMA_SCROLL_STEPS) config.browser.scroll_steps = Number(env.LUMA_SCROLL_STEPS);
   if (env.LUMA_USER_AGENT) config.browser.user_agent = env.LUMA_USER_AGENT;
+  if (env.LUMA_REPORT_PATH) config.reports.path = env.LUMA_REPORT_PATH;
+  const reportsEnabled = envBool(env.LUMA_REPORTS_ENABLED);
+  if (reportsEnabled !== undefined) config.reports.enabled = reportsEnabled;
   const headless = envBool(env.LUMA_HEADLESS);
   if (headless !== undefined) config.browser.headless = headless;
 
@@ -112,6 +119,9 @@ export function loadConfig(configPath = "config.yaml", env = process.env) {
 
   if (!path.isAbsolute(config.database.path)) {
     config.database.path = path.resolve(process.cwd(), config.database.path);
+  }
+  if (config.reports?.path && !path.isAbsolute(config.reports.path)) {
+    config.reports.path = path.resolve(process.cwd(), config.reports.path);
   }
   return config;
 }
