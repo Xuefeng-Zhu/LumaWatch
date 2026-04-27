@@ -21,6 +21,19 @@ const TECH_TERMS = [
   "robotics"
 ];
 
+const NON_TARGET_CITY_TERMS = [
+  "san francisco",
+  "new york",
+  "los angeles",
+  "austin",
+  "boston",
+  "chicago",
+  "miami",
+  "portland",
+  "denver",
+  "atlanta"
+];
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -55,6 +68,7 @@ export function buildSearchText(event) {
 export function scoreEvent(event, config) {
   const text = buildSearchText(event);
   const nearbyTerms = config.location?.nearby_terms || [];
+  const targetCity = config.location?.target_city || "";
   const includeTerms = config.relevance?.include_terms || [];
   const excludeTerms = config.relevance?.exclude_terms || [];
   const configuredAiTerms = includeTerms.filter((term) => AI_TERMS.includes(term.toLowerCase()));
@@ -66,6 +80,8 @@ export function scoreEvent(event, config) {
   const aiMatches = matchedTerms(text, aiTerms);
   const techMatches = matchedTerms(text, techTerms);
   const excludeMatches = matchedTerms(text, excludeTerms);
+  const nonTargetCityMatches = matchedTerms(text, NON_TARGET_CITY_TERMS)
+    .filter((term) => term.toLowerCase() !== targetCity.toLowerCase());
 
   let score = 0;
   if (nearbyMatches.length > 0) score += 3;
@@ -75,20 +91,30 @@ export function scoreEvent(event, config) {
 
   const sourceUrl = (event.sourceUrl || "").toLowerCase();
   const sourceLooksRelevant = sourceUrl.includes("/ai") || sourceUrl.includes("/tech");
+  const sourceLooksTargetCity = targetCity && sourceUrl.includes(`/${targetCity.toLowerCase().replace(/\s+/g, "-")}`);
+  const hasNearbySignal = nearbyMatches.length > 0
+    || sourceLooksTargetCity
+    || (event.foundInNearbySection && nonTargetCityMatches.length === 0);
+
   if (sourceLooksRelevant && event.foundInNearbySection && excludeMatches.length === 0) {
     score = Math.max(score, 2);
   }
 
   const reasons = [];
   if (nearbyMatches.length) reasons.push(`Seattle-area: ${nearbyMatches.slice(0, 3).join(", ")}`);
+  if (sourceLooksTargetCity) reasons.push(`source city: ${targetCity}`);
   if (aiMatches.length) reasons.push(`AI: ${aiMatches.slice(0, 3).join(", ")}`);
   if (techMatches.length) reasons.push(`Tech: ${techMatches.slice(0, 3).join(", ")}`);
   if (event.foundInNearbySection) reasons.push("visible in nearby section");
+  if (!hasNearbySignal) reasons.push("no nearby signal");
+  if (nonTargetCityMatches.length && nearbyMatches.length === 0) {
+    reasons.push(`other city signal: ${nonTargetCityMatches.slice(0, 3).join(", ")}`);
+  }
   if (excludeMatches.length) reasons.push(`Excluded terms: ${excludeMatches.slice(0, 3).join(", ")}`);
   if (!reasons.length) reasons.push("no configured terms matched");
 
   return {
-    keep: score >= 2,
+    keep: hasNearbySignal && score >= 2,
     score,
     reasons,
     why: reasons.join("; ")

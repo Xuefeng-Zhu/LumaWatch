@@ -4,6 +4,8 @@ Personal Node.js monitor for public Luma AI and tech events near Seattle.
 
 It checks configured public Luma discovery pages, extracts public event links/cards, filters for Seattle-area AI/tech relevance, stores a persistent seen-event SQLite database, and notifies only for events that have not been seen before.
 
+The monitor intentionally keeps only nearby events: an event must either include a configured Seattle-area term, come from the target city page, or appear in a nearby section without clear non-Seattle city signals. Broad `/ai` or `/tech` category events without nearby signals are skipped.
+
 ## Guardrails
 
 This tool uses public pages only. It does not log in, collect guest lists, collect attendee data, access private/member-only pages, or attempt to bypass bot protection, CAPTCHAs, rate limits, or access controls. Keep schedules conservative.

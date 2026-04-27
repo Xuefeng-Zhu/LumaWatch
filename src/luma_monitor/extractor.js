@@ -61,7 +61,7 @@ async function scrollPage(page, steps, pauseMs) {
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
 }
 
-async function extractCandidatesFromPage(page, source) {
+async function extractCandidatesFromPage(page, source, config) {
   return page.evaluate((sourceInput) => {
     function textFor(anchor) {
       let node = anchor;
@@ -76,27 +76,53 @@ async function extractCandidatesFromPage(page, source) {
       return best.trim();
     }
 
-    function surroundingText(anchor) {
-      const section = anchor.closest("section, main, body");
-      const text = (section?.innerText || section?.textContent || "").slice(0, 5000);
-      return text;
+    function nearbyContextText(anchor) {
+      const parts = [];
+      let node = anchor.parentElement;
+      for (let depth = 0; depth < 6 && node; depth += 1) {
+        const tag = node.tagName?.toLowerCase();
+        if (tag === "section" || tag === "article" || tag === "li" || node.getAttribute?.("role") === "region") {
+          const text = (node.innerText || node.textContent || "").trim();
+          if (text && text.length < 5000) parts.push(text);
+          const heading = node.querySelector?.("h1,h2,h3,[role='heading']");
+          const headingText = (heading?.innerText || heading?.textContent || "").trim();
+          if (headingText) parts.push(headingText);
+        }
+
+        let sibling = node.previousElementSibling;
+        for (let count = 0; count < 3 && sibling; count += 1) {
+          if (/^H[1-6]$/.test(sibling.tagName || "") || sibling.getAttribute?.("role") === "heading") {
+            parts.push((sibling.innerText || sibling.textContent || "").trim());
+            break;
+          }
+          sibling = sibling.previousElementSibling;
+        }
+        node = node.parentElement;
+      }
+      return parts.join("\n").slice(0, 5000);
+    }
+
+    function escapeRegExp(value) {
+      return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
     return Array.from(document.querySelectorAll("a[href]")).map((anchor) => {
       const href = anchor.href;
       const cardText = textFor(anchor);
-      const sectionText = surroundingText(anchor);
+      const sectionText = nearbyContextText(anchor);
+      const targetCity = escapeRegExp(sourceInput.targetCity || "Seattle");
+      const nearbyPattern = new RegExp(`\\b(nearby|near you|near ${targetCity}|in ${targetCity}|${targetCity})\\b`, "i");
       return {
         href,
         linkText: (anchor.innerText || anchor.textContent || "").trim(),
         cardText,
-        foundInNearbySection: /\b(nearby|near you|in seattle|seattle)\b/i.test(`${cardText}\n${sectionText}`),
+        foundInNearbySection: nearbyPattern.test(`${cardText}\n${sectionText}`),
         sourceName: sourceInput.name,
         sourceUrl: sourceInput.url,
         sourceType: sourceInput.type
       };
     });
-  }, source);
+  }, { ...source, targetCity: config.location?.target_city || "Seattle" });
 }
 
 async function extractPageLocationSignals(page, config) {
@@ -142,7 +168,7 @@ export class LumaExtractor {
         });
       }
 
-      const rawCandidates = await extractCandidatesFromPage(page, source);
+      const rawCandidates = await extractCandidatesFromPage(page, source, this.config);
       const byUrl = new Map();
       for (const candidate of rawCandidates) {
         const canonicalUrl = normalizeLumaEventUrl(candidate.href);
