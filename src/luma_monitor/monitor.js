@@ -17,6 +17,21 @@ function prepareEvent(event, config) {
   return { event: prepared, scored };
 }
 
+function reportEventDetailLength(event) {
+  return [event.title, event.dateText, event.locationText, event.matchWhy]
+    .filter(Boolean)
+    .join("\n")
+    .length;
+}
+
+function isBetterReportEvent(candidate, existing) {
+  if (!existing) return true;
+  const candidateScore = candidate.matchScore ?? Number.NEGATIVE_INFINITY;
+  const existingScore = existing.matchScore ?? Number.NEGATIVE_INFINITY;
+  if (candidateScore !== existingScore) return candidateScore > existingScore;
+  return reportEventDetailLength(candidate) > reportEventDetailLength(existing);
+}
+
 export async function initDatabase(config, logger) {
   const db = new SeenDatabase(config.database.path);
   db.init();
@@ -48,6 +63,22 @@ export async function runMonitor(config, options = {}) {
     keptEvents: [],
     skippedEvents: []
   };
+  const currentRunKept = new Map();
+  const currentRunNew = new Map();
+
+  function rememberReportEvent(map, list, event) {
+    const key = event.eventKey || eventKeyFor(event);
+    const existing = map.get(key);
+    if (!isBetterReportEvent(event, existing)) return false;
+    map.set(key, event);
+    const index = list.findIndex((item) => (item.eventKey || eventKeyFor(item)) === key);
+    if (index >= 0) {
+      list[index] = event;
+    } else {
+      list.push(event);
+    }
+    return !existing;
+  }
 
   try {
     for (const source of config.sources || []) {
@@ -83,8 +114,9 @@ export async function runMonitor(config, options = {}) {
             continue;
           }
 
-          stats.kept += 1;
-          runEvents.keptEvents.push(event);
+          if (rememberReportEvent(currentRunKept, runEvents.keptEvents, event)) {
+            stats.kept += 1;
+          }
           const existing = db.getSeen(event.eventKey);
           if (mode === "baseline") {
             db.upsertSeen(event, { now: checkedAt, notified: false });
@@ -92,12 +124,15 @@ export async function runMonitor(config, options = {}) {
           }
 
           if (existing) {
+            if (currentRunNew.has(event.eventKey)) {
+              rememberReportEvent(currentRunNew, runEvents.newEvents, event);
+            }
             db.upsertSeen(event, { now: checkedAt, notified: Boolean(existing.first_notified_at) });
             continue;
           }
 
           stats.newEvents += 1;
-          runEvents.newEvents.push(event);
+          rememberReportEvent(currentRunNew, runEvents.newEvents, event);
           db.upsertSeen(event, { now: checkedAt, notified: false });
           const notificationSummary = await notifyAll(event, notifiers, db, logger);
           stats.notificationsAttempted += notificationSummary.attempted;

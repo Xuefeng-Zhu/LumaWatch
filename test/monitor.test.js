@@ -129,6 +129,59 @@ test("HTML report renders every matching event seen in the current run", async (
   db.close();
 });
 
+test("HTML report dedupes the same event found from multiple sources", async () => {
+  const config = testConfig({
+    sources: [
+      { name: "luma-ai", url: "https://luma.com/ai", type: "category_page", enabled: true },
+      { name: "luma-tech", url: "https://luma.com/tech", type: "category_page", enabled: true }
+    ]
+  });
+  const db = makeDb(config);
+  const canonicalUrl = "https://luma.com/climatetech-scalathon";
+  const aiSourceEvent = aiSeattleEvent({
+    eventUrl: canonicalUrl,
+    canonicalUrl,
+    title: "ClimateTech Scalathon",
+    dateText: "May 1, 5:00 PM",
+    locationText: "9Zero Climate Innovation Hub",
+    sourceName: "luma-ai",
+    sourceUrl: "https://luma.com/ai",
+    cardText: "ClimateTech Scalathon\nMay 1, 5:00 PM\n9Zero Climate Innovation Hub\nAI startup"
+  });
+  const techSourceEvent = aiSeattleEvent({
+    eventUrl: canonicalUrl,
+    canonicalUrl,
+    title: "ClimateTech Scalathon",
+    dateText: "May 1, 5:00 PM",
+    locationText: "9Zero Climate Innovation Hub",
+    sourceName: "luma-tech",
+    sourceUrl: "https://luma.com/tech",
+    cardText: "ClimateTech Scalathon\nMay 1, 5:00 PM\n9Zero Climate Innovation Hub\nstartup tech"
+  });
+
+  const stats = await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({
+      "luma-ai": [aiSourceEvent],
+      "luma-tech": [techSourceEvent]
+    }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  const html = fs.readFileSync(config.reports.path, "utf8");
+  const seenSection = html.slice(
+    html.indexOf('<section id="seen">'),
+    html.indexOf("<details>", html.indexOf('<section id="seen">'))
+  );
+  assert.equal(stats.candidates, 2);
+  assert.equal(stats.kept, 1);
+  assert.equal(stats.newEvents, 1);
+  assert.equal(db.countSeen(), 1);
+  assert.equal((seenSection.match(/ClimateTech Scalathon/g) || []).length, 1);
+  db.close();
+});
+
 test("HTML report does not treat time-only text as an event date", async () => {
   const config = testConfig();
   const db = makeDb(config);
