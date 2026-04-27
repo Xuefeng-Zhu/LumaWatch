@@ -174,6 +174,39 @@ test("HTML report recovers date ranges from Luma tech card text", async () => {
   db.close();
 });
 
+test("HTML report sorts relative Today and Tomorrow dates correctly", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const tomorrowEvent = aiSeattleEvent({
+    eventUrl: "https://luma.com/tomorrow-ai-seattle",
+    canonicalUrl: "https://luma.com/tomorrow-ai-seattle",
+    title: "Tomorrow Seattle AI Meetup",
+    dateText: "Tomorrow, 6:00 PM"
+  });
+  const todayEvent = aiSeattleEvent({
+    eventUrl: "https://luma.com/today-ai-seattle",
+    canonicalUrl: "https://luma.com/today-ai-seattle",
+    title: "Today Seattle AI Meetup",
+    dateText: "Today, 7:00 PM"
+  });
+
+  await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: [tomorrowEvent, todayEvent] }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  const html = fs.readFileSync(config.reports.path, "utf8");
+  assert.ok(
+    html.indexOf("Today Seattle AI Meetup") < html.indexOf("Tomorrow Seattle AI Meetup"),
+    "expected Today event to appear before Tomorrow event"
+  );
+  assert.doesNotMatch(html, /Today Seattle AI Meetup[\s\S]*?<strong>TBD<\/strong>/);
+  assert.doesNotMatch(html, /Tomorrow Seattle AI Meetup[\s\S]*?<strong>TBD<\/strong>/);
+  db.close();
+});
+
 test("dedupe prevents duplicate notifications across check runs", async () => {
   const config = testConfig();
   const db = makeDb(config);

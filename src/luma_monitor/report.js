@@ -102,6 +102,51 @@ function parseTimeParts(text) {
   return { hour, minute, label: match[0] };
 }
 
+function pacificDateParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short"
+  });
+  const parts = formatter.formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(lookup.year),
+    month: Number(lookup.month),
+    day: Number(lookup.day),
+    weekday: String(lookup.weekday || "").slice(0, 3).toLowerCase()
+  };
+}
+
+function relativeDateUtc(text) {
+  const normalized = String(text || "").toLowerCase();
+  const match = normalized.match(/\b(today|tomorrow|mon(day)?|tue(sday)?|wed(nesday)?|thu(rsday)?|fri(day)?|sat(urday)?|sun(day)?)\b/);
+  if (!match) return null;
+
+  const now = new Date();
+  const pacificNow = pacificDateParts(now);
+  const target = new Date(Date.UTC(pacificNow.year, pacificNow.month - 1, pacificNow.day, 12));
+
+  const key = match[1].slice(0, 3).toLowerCase();
+  if (key === "tom") {
+    target.setUTCDate(target.getUTCDate() + 1);
+  } else if (key !== "tod") {
+    const order = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    const todayIndex = order.indexOf(pacificNow.weekday);
+    const targetIndex = order.indexOf(key);
+    if (todayIndex >= 0 && targetIndex >= 0) {
+      const delta = (targetIndex - todayIndex + 7) % 7;
+      target.setUTCDate(target.getUTCDate() + delta);
+    }
+  }
+
+  const time = parseTimeParts(normalized);
+  target.setUTCHours(time.hour, time.minute, 0, 0);
+  return target.getTime();
+}
+
 function parseSortableDate(text) {
   const normalized = String(text || "").replace(/\s+/g, " ").trim();
   if (!normalized) return Number.POSITIVE_INFINITY;
@@ -127,6 +172,9 @@ function parseSortableDate(text) {
     const time = parseTimeParts(normalized);
     return Date.UTC(year, month, day, time.hour, time.minute);
   }
+
+  const relative = relativeDateUtc(normalized);
+  if (relative != null) return relative;
 
   const parsed = Date.parse(normalized);
   return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
