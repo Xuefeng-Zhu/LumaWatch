@@ -1,10 +1,12 @@
 # LumaWatch
 
-Personal Node.js monitor for public Luma AI and tech events near Seattle.
+Personal Node.js monitor for public Luma events near the machine/session running the script.
 
-It checks configured public Luma discovery pages, extracts public event links/cards, filters for Seattle-area AI/tech relevance, stores a persistent seen-event SQLite database, and notifies only for events that have not been seen before.
+It checks configured public Luma discovery pages, extracts public event links/cards, filters for configured location and relevance terms, stores a persistent seen-event SQLite database, and notifies only for events that have not been seen before.
 
-The monitor intentionally checks only nearby events. On Luma discovery pages it extracts event links from the section headed by `<h2 class="section-title">Nearby Events</h2>`, collecting visible rows throughout the section as Luma virtualizes the list while scrolling. Events must still pass the Seattle-area and AI/tech relevance filters; broad `/ai` or `/tech` category links outside that Nearby Events section are ignored.
+The monitor intentionally checks only nearby events. On Luma discovery pages it extracts event links from the section headed by `<h2 class="section-title">Nearby Events</h2>`, collecting visible rows throughout the section as Luma virtualizes the list while scrolling. Events must still pass the configured location and relevance filters; broad category links outside that Nearby Events section are ignored.
+
+Luma's nearby results can depend on browser/session geolocation, IP location, and where the script is run.
 
 ## Guardrails
 
@@ -32,6 +34,9 @@ sources:
     type: category_page
   - name: luma-tech
     url: https://luma.com/tech
+    type: category_page
+  - name: luma-food
+    url: https://luma.com/food
     type: category_page
   - name: luma-seattle
     url: https://luma.com/seattle
@@ -142,7 +147,7 @@ Cron every 30 minutes:
 */30 * * * * cd /path/to/LumaWatch && /usr/bin/node src/cli.js check --config config.yaml >> luma-watch.log 2>&1
 ```
 
-A GitHub Actions example is included at `.github/workflows/luma-watch.yml`. For GitHub Actions, remember that nearby results may depend on GitHub runner IP geolocation, which is unlikely to be Seattle.
+A GitHub Actions example is included at `.github/workflows/luma-watch.yml`. For GitHub Actions, remember that nearby results may depend on GitHub runner IP/session geolocation, which may differ from your actual location.
 
 ## Docker
 
@@ -159,7 +164,7 @@ Set `database.path: ./data/luma_seen.sqlite` when using the mounted `data` direc
 
 ## Known Limitations
 
-Luma nearby/category results may depend on IP geolocation. Run this from Seattle or a Seattle-geolocated environment for best results. The monitor logs a warning if a discovery page appears to show nearby results without Seattle-area signals.
+Luma nearby/category results may depend on IP/session geolocation. Run this from the location you want to monitor, or from an environment geolocated there, for best results. The monitor logs a warning if a discovery page appears to show nearby results without configured location signals.
 
 Extraction is defensive because public Luma pages can change markup. The monitor keeps URL-based dedupe as the primary identity and falls back to a stable title/date/location hash only when no canonical event URL is available.
 
