@@ -110,3 +110,53 @@ test("parseCardFields combines Tomorrow context with card time", () => {
   assert.equal(parsed.title, "Open Source Tuesday — Free Coworking at Labour Temple");
   assert.equal(parsed.dateText, "Tomorrow, 8:00 AM");
 });
+
+test("parseCardFields ignores full weekday headings when choosing event titles", () => {
+  const parsed = parseCardFields({
+    href: "https://luma.com/ai-northwest-coffee",
+    dateContextText: "May 1",
+    linkText: [
+      "Friday",
+      "2:00 PM",
+      "AI Northwest - Coffee Social + Show & Tell",
+      "By Aaron Poppie",
+      "The Collective Seattle",
+      "Suggested: $10"
+    ].join("\n")
+  }, defaultConfig);
+
+  assert.equal(parsed.title, "AI Northwest - Coffee Social + Show & Tell");
+  assert.equal(parsed.dateText, "May 1, 2:00 PM");
+  assert.equal(parsed.locationText, "The Collective Seattle");
+});
+
+test("parseCardFields derives venue after organizer even without city terms", () => {
+  const parsed = parseCardFields({
+    href: "https://luma.com/climatetech-scalathon",
+    dateContextText: "May 1",
+    linkText: [
+      "5:00 PM",
+      "ClimateTech Scalathon",
+      "By Venture Mechanics Startup Launchpad, Laura ...",
+      "9Zero Climate Innovation Hub",
+      "$25"
+    ].join("\n")
+  }, defaultConfig);
+
+  assert.equal(parsed.title, "ClimateTech Scalathon");
+  assert.equal(parsed.dateText, "May 1, 5:00 PM");
+  assert.equal(parsed.locationText, "9Zero Climate Innovation Hub");
+});
+
+test("parseCardFields does not use organizer lines as venue", () => {
+  const parsed = parseCardFields({
+    href: "https://luma.com/ai-pm-skills",
+    linkText: [
+      "AI PM Skills Workshop: From Discovery to Prototyping",
+      "By Seattle Tech Forum, Amy Peltonen, Amandeep, Shaili Guru & 2 others"
+    ].join("\n")
+  }, defaultConfig);
+
+  assert.equal(parsed.title, "AI PM Skills Workshop: From Discovery to Prototyping");
+  assert.equal(parsed.locationText, null);
+});

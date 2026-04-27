@@ -4,10 +4,13 @@ import { retryAfterHeaderToMs, RetryableError, withRetries } from "./retry.js";
 import { sleep } from "./time.js";
 import { extractEventId, normalizeLumaEventUrl } from "./url.js";
 
-const MONTH_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|today|tomorrow|mon|tue|wed|thu|fri|sat|sun)\b/i;
 const TIME_RE = /\b([01]?\d|2[0-3])(:\d{2})?\s?(am|pm|AM|PM)?\b/;
 const STATUS_RE = /^(?:status\s*:?\s*)?(waitlist|sold out|registration closed|near capacity|cancelled|canceled|full)$/i;
-const DATE_RE = /\b(today|tomorrow|mon|tue|wed|thu|fri|sat|sun)\b|(\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b)|(\b\d{1,2}\/\d{1,2}(\s*(—|-|to)\s*\d{1,2}\/\d{1,2})?\b)/i;
+const WEEKDAY_RE = /^(mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)$/i;
+const MONTH_ONLY_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?$/i;
+const MONTH_DAY_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:,\s*\d{4})?\b/i;
+const NUMERIC_DATE_RE = /\b\d{1,2}\/\d{1,2}(\s*(—|-|to)\s*\d{1,2}\/\d{1,2})?\b/;
+const ISO_DATE_RE = /\b\d{4}-\d{2}-\d{2}\b/;
 
 function isStatusOnlyLine(line) {
   return /^(happening now|live now|starting soon)$/i.test(line.trim());
@@ -20,7 +23,10 @@ function isStatusLine(line) {
 function isDateLikeLine(line) {
   const trimmed = line.trim();
   if (!trimmed || isStatusOnlyLine(trimmed)) return false;
-  if (DATE_RE.test(trimmed)) return true;
+  if (/^(today|tomorrow)(?:,?\s+\d{1,2}(?::\d{2})?\s*(am|pm))?$/i.test(trimmed)) return true;
+  if (WEEKDAY_RE.test(trimmed)) return true;
+  if (MONTH_DAY_RE.test(trimmed) && trimmed.length <= 80) return true;
+  if (NUMERIC_DATE_RE.test(trimmed) || ISO_DATE_RE.test(trimmed)) return true;
   return false;
 }
 
@@ -42,10 +48,42 @@ function titleLineFrom(lines) {
     !isDateLikeLine(line)
     && !isTimeOnlyLine(line)
     && !isStatusLine(line)
+    && !MONTH_ONLY_RE.test(line.trim())
+    && !isOrganizerLine(line)
+    && !isNonEventUiLine(line)
     && !/^\d+\s*Events?\b/i.test(line)
     && !/^\d+\s*Subscribers?\b/i.test(line)
     && !/^Subscribe$/i.test(line)
   );
+}
+
+function isOrganizerLine(line) {
+  return /^by\b/i.test(line.trim());
+}
+
+function isPriceOrRsvpLine(line) {
+  const trimmed = line.trim();
+  return /^(\$|free\b|suggested:|going\b|\+\d+\b)/i.test(trimmed);
+}
+
+function isNonEventUiLine(line) {
+  const trimmed = line.trim();
+  return /^(explore events|sign in|discover|pricing|help|submit event|upcoming|past|events|featured in .+)$/i.test(trimmed)
+    || isPriceOrRsvpLine(trimmed);
+}
+
+function isLocationCandidateLine(line, title) {
+  const trimmed = line.trim();
+  return Boolean(trimmed)
+    && normalizedText(trimmed) !== normalizedText(title)
+    && !isDateLikeLine(trimmed)
+    && !isTimeOnlyLine(trimmed)
+    && !isStatusLine(trimmed)
+    && !MONTH_ONLY_RE.test(trimmed)
+    && !isOrganizerLine(trimmed)
+    && !isNonEventUiLine(trimmed)
+    && !/^\d+\s*Events?\b/i.test(trimmed)
+    && !/^\d+\s*Subscribers?\b/i.test(trimmed);
 }
 
 function normalizedText(value) {
@@ -84,6 +122,14 @@ function contextualDateFrom(lines, contextText) {
   return [contextText, timeLine].filter(Boolean).join(", ");
 }
 
+function hasCalendarDateSignal(value) {
+  const text = String(value || "");
+  return /\b(today|tomorrow)\b/i.test(text)
+    || MONTH_DAY_RE.test(text)
+    || NUMERIC_DATE_RE.test(text)
+    || ISO_DATE_RE.test(text);
+}
+
 function dateNearTitle(lines, title) {
   const index = titleLineIndex(lines, title);
   if (index < 0) return null;
@@ -91,22 +137,47 @@ function dateNearTitle(lines, title) {
   return firstDateFrom(nearby);
 }
 
+function locationLineFrom(lines, title, config) {
+  const titleIndex = titleLineIndex(lines, title);
+  if (titleIndex >= 0) {
+    const nearby = lines.slice(titleIndex + 1, titleIndex + 8);
+    const organizerIndex = nearby.findIndex((line) => isOrganizerLine(line));
+    if (organizerIndex >= 0) {
+      const afterOrganizer = nearby
+        .slice(organizerIndex + 1, organizerIndex + 5)
+        .find((line) => isLocationCandidateLine(line, title));
+      if (afterOrganizer) return afterOrganizer;
+    }
+
+    const nearbyTermLocation = nearby.find((line) =>
+      isLocationCandidateLine(line, title)
+      && (config.location?.nearby_terms || []).some((term) => line.toLowerCase().includes(term.toLowerCase()))
+    );
+    if (nearbyTermLocation) return nearbyTermLocation;
+  }
+
+  return lines.find((line) =>
+    isLocationCandidateLine(line, title)
+    && (config.location?.nearby_terms || []).some((term) => line.toLowerCase().includes(term.toLowerCase()))
+  );
+}
+
 export function parseCardFields(candidate, config) {
   const linkLines = uniqueLines(candidate.linkText || "");
   const cardLines = uniqueLines(candidate.cardText || "");
   const allLines = [...linkLines, ...cardLines];
   const title = candidate.title || titleLineFrom(linkLines) || titleLineFrom(cardLines) || null;
+  const contextualDate = contextualDateFrom(allLines, candidate.dateContextText);
   const dateText = isDateLikeLine(candidate.dateText || "")
     ? candidate.dateText
-    : contextualDateFrom(allLines, candidate.dateContextText)
+    : (hasCalendarDateSignal(contextualDate) ? contextualDate : null)
       || dateNearTitle(linkLines, title)
       || firstDateFrom(linkLines)
       || dateNearTitle(cardLines, title)
-      || firstDateFrom(cardLines);
+      || firstDateFrom(cardLines)
+      || contextualDate;
 
-  const locationText = allLines.find((line) =>
-    (config.location?.nearby_terms || []).some((term) => line.toLowerCase().includes(term.toLowerCase()))
-  );
+  const locationText = locationLineFrom(allLines, title, config);
   const statusText = allLines.find((line) => isStatusLine(line));
 
   return {
@@ -165,8 +236,10 @@ async function extractCandidatesFromPage(page, source, config) {
       if (!normalized) return "";
       const url = new URL(normalized);
       const parts = url.pathname.split("/").filter(Boolean);
+      const nonEventPaths = new Set(["android", "discover", "help", "ios", "pricing"]);
       if (!["luma.com", "lu.ma"].includes(url.hostname)) return "";
       if (parts.length === 0 || parts.length > 2) return "";
+      if (parts.length === 1 && nonEventPaths.has(parts[0].toLowerCase())) return "";
       return normalized;
     }
 
@@ -215,8 +288,12 @@ async function extractCandidatesFromPage(page, source, config) {
         .map((line) => line.replace(/\s+/g, " ").trim())
         .filter(Boolean);
       for (const line of lines) {
-        const match = line.match(/^(today|tomorrow|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)(?:\s+[A-Za-z]+)?$/i);
-        if (match) return match[1];
+        const monthDay = line.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:,\s*\d{4})?\b/i);
+        if (monthDay && line.length <= 80) return monthDay[0];
+        const relative = line.match(/^(today|tomorrow)$/i);
+        if (relative) return relative[1];
+        const weekday = line.match(/^(mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)$/i);
+        if (weekday) return weekday[1];
       }
       return "";
     }
