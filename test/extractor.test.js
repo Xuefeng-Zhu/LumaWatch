@@ -78,3 +78,35 @@ test("parseCardFields does not treat Full Stack titles as status text", () => {
   assert.equal(parsed.dateText, "May 21, 6:00 PM");
   assert.equal(parsed.statusText, "Waitlist");
 });
+
+test("parseCardFields combines Today context with card time", () => {
+  const parsed = parseCardFields({
+    href: "https://luma.com/today-lawyers-meetup",
+    dateContextText: "Today",
+    linkText: [
+      "2:00 PM",
+      "Taiwanese American Lawyers Meetup Ahead of the Madrona GC Summit",
+      "By Cooley LLP",
+      "Alder & Ash"
+    ].join("\n")
+  }, defaultConfig);
+
+  assert.equal(parsed.title, "Taiwanese American Lawyers Meetup Ahead of the Madrona GC Summit");
+  assert.equal(parsed.dateText, "Today, 2:00 PM");
+});
+
+test("parseCardFields combines Tomorrow context with card time", () => {
+  const parsed = parseCardFields({
+    href: "https://luma.com/tomorrow-open-source-tuesday",
+    dateContextText: "Tomorrow",
+    linkText: [
+      "8:00 AM",
+      "Open Source Tuesday — Free Coworking at Labour Temple",
+      "By Labour Temple",
+      "2800 1st Ave"
+    ].join("\n")
+  }, defaultConfig);
+
+  assert.equal(parsed.title, "Open Source Tuesday — Free Coworking at Labour Temple");
+  assert.equal(parsed.dateText, "Tomorrow, 8:00 AM");
+});

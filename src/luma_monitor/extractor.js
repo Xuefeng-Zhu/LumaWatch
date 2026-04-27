@@ -78,6 +78,12 @@ function firstDateFrom(lines) {
   return dateWithFollowingTime(lines, dateIndex);
 }
 
+function contextualDateFrom(lines, contextText) {
+  if (!isDateLikeLine(contextText || "")) return null;
+  const timeLine = lines.find((line) => isTimeOnlyLine(line));
+  return [contextText, timeLine].filter(Boolean).join(", ");
+}
+
 function dateNearTitle(lines, title) {
   const index = titleLineIndex(lines, title);
   if (index < 0) return null;
@@ -88,18 +94,20 @@ function dateNearTitle(lines, title) {
 export function parseCardFields(candidate, config) {
   const linkLines = uniqueLines(candidate.linkText || "");
   const cardLines = uniqueLines(candidate.cardText || "");
+  const allLines = [...linkLines, ...cardLines];
   const title = candidate.title || titleLineFrom(linkLines) || titleLineFrom(cardLines) || null;
   const dateText = isDateLikeLine(candidate.dateText || "")
     ? candidate.dateText
-    : dateNearTitle(linkLines, title)
+    : contextualDateFrom(allLines, candidate.dateContextText)
+      || dateNearTitle(linkLines, title)
       || firstDateFrom(linkLines)
       || dateNearTitle(cardLines, title)
       || firstDateFrom(cardLines);
 
-  const locationText = [...linkLines, ...cardLines].find((line) =>
+  const locationText = allLines.find((line) =>
     (config.location?.nearby_terms || []).some((term) => line.toLowerCase().includes(term.toLowerCase()))
   );
-  const statusText = [...linkLines, ...cardLines].find((line) => isStatusLine(line));
+  const statusText = allLines.find((line) => isStatusLine(line));
 
   return {
     ...candidate,
@@ -174,21 +182,69 @@ async function extractCandidatesFromPage(page, source, config) {
         || Boolean(element.querySelector?.(":scope > .section-title-wrapper, :scope > h2.section-title"));
     }
 
-    function nearbyEventAnchors() {
+    function nearbyRoots() {
       const headings = Array.from(document.querySelectorAll("h2.section-title"))
         .filter((heading) => normalizeText(heading.innerText || heading.textContent) === "nearby events");
-      const anchors = new Set();
+      const roots = [];
 
       for (const heading of headings) {
         const titleWrapper = heading.closest(".section-title-wrapper") || heading.parentElement;
         let sibling = titleWrapper?.nextElementSibling;
         while (sibling && !isSectionBoundary(sibling)) {
-          addLinksFrom(sibling, anchors);
+          roots.push(sibling);
           sibling = sibling.nextElementSibling;
         }
       }
 
+      return roots;
+    }
+
+    function nearbyEventAnchors() {
+      const anchors = new Set();
+
+      for (const root of nearbyRoots()) {
+        addLinksFrom(root, anchors);
+      }
+
       return Array.from(anchors);
+    }
+
+    function dayHeadingFromText(value) {
+      const lines = String(value || "")
+        .split(/\n+/)
+        .map((line) => line.replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+      for (const line of lines) {
+        const match = line.match(/^(today|tomorrow|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)(?:\s+[A-Za-z]+)?$/i);
+        if (match) return match[1];
+      }
+      return "";
+    }
+
+    function nearestDayHeading(anchor) {
+      const anchorRect = anchor.getBoundingClientRect();
+      let bestText = "";
+      let bestBottom = Number.NEGATIVE_INFINITY;
+
+      for (const root of nearbyRoots()) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let node = walker.nextNode();
+        while (node) {
+          const text = dayHeadingFromText(node.nodeValue);
+          const element = node.parentElement;
+          if (text && element && !element.contains(anchor)) {
+            const rect = element.getBoundingClientRect();
+            const bottom = rect.bottom || rect.top;
+            if (bottom <= anchorRect.top + 2 && bottom > bestBottom) {
+              bestBottom = bottom;
+              bestText = text;
+            }
+          }
+          node = walker.nextNode();
+        }
+      }
+
+      return bestText;
     }
 
     function textFor(anchor) {
@@ -255,6 +311,7 @@ async function extractCandidatesFromPage(page, source, config) {
         href,
         linkText: (anchor.innerText || anchor.textContent || "").trim(),
         cardText,
+        dateContextText: nearestDayHeading(anchor),
         foundInNearbySection: true,
         nearbySectionMatched: nearbyPattern.test(`${cardText}\n${sectionText}`),
         sourceName: sourceInput.name,
