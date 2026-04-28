@@ -239,6 +239,36 @@ test("HTML report shows date in metadata without a badge", async () => {
   db.close();
 });
 
+test("check mode deletes past events from seen records", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const pastEvent = aiSeattleEvent({
+    eventUrl: "https://luma.com/past-ai-seattle",
+    canonicalUrl: "https://luma.com/past-ai-seattle",
+    title: "Past Seattle AI Meetup",
+    dateText: "Jan 1, 2020, 6:00 PM"
+  });
+  const futureEvent = aiSeattleEvent({
+    eventUrl: "https://luma.com/future-ai-seattle",
+    canonicalUrl: "https://luma.com/future-ai-seattle",
+    title: "Future Seattle AI Meetup",
+    dateText: "Jan 1, 2099, 6:00 PM"
+  });
+  db.upsertSeen(pastEvent);
+  db.upsertSeen(futureEvent);
+
+  await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: [] }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  assert.equal(db.getSeen("https://luma.com/past-ai-seattle"), undefined);
+  assert.ok(db.getSeen("https://luma.com/future-ai-seattle"));
+  db.close();
+});
+
 test("HTML report recovers date ranges from Luma tech card text", async () => {
   const config = testConfig();
   const db = makeDb(config);

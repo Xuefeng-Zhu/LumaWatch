@@ -4,6 +4,39 @@ import Database from "better-sqlite3";
 import { eventFingerprint, eventKeyFor } from "./url.js";
 import { nowIso } from "./time.js";
 
+function parseEventTimestamp(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return Number.POSITIVE_INFINITY;
+  const currentYear = new Date().getFullYear();
+
+  const namedNoYear = text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b(?!,\s*\d{4})/i);
+  if (namedNoYear) {
+    const normalized = `${namedNoYear[0]}, ${currentYear}`;
+    const parsedNamed = Date.parse(normalized);
+    if (Number.isFinite(parsedNamed)) return parsedNamed;
+  }
+
+  const numericNoYear = text.match(/\b(\d{1,2})\/(\d{1,2})\b(?!\/\d{2,4})/);
+  if (numericNoYear) {
+    const normalized = `${numericNoYear[1]}/${numericNoYear[2]}/${currentYear}`;
+    const parsedNumeric = Date.parse(normalized);
+    if (Number.isFinite(parsedNumeric)) return parsedNumeric;
+  }
+
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
+function eventDateTimestampFromRawJson(rawJson) {
+  if (!rawJson) return Number.POSITIVE_INFINITY;
+  try {
+    const event = JSON.parse(rawJson);
+    return parseEventTimestamp(event.dateText || event.date_text || "");
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
 export class SeenDatabase {
   constructor(dbPath) {
     this.dbPath = dbPath;
@@ -220,5 +253,30 @@ export class SeenDatabase {
       error: record.error || null,
       payload_json: JSON.stringify(record.payload || {})
     });
+  }
+
+  deletePastEvents(options = {}) {
+    const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+    const rows = this.db.prepare(`
+      select event_key, raw_json
+      from seen_events
+    `).all();
+    const staleKeys = rows
+      .filter((row) => eventDateTimestampFromRawJson(row.raw_json) < nowMs)
+      .map((row) => row.event_key);
+    if (!staleKeys.length) return 0;
+
+    const deleteSeen = this.db.prepare("delete from seen_events where event_key = ?");
+    const deleteObservations = this.db.prepare("delete from event_observations where event_key = ?");
+    const deleteNotifications = this.db.prepare("delete from notifications where event_key = ?");
+    const tx = this.db.transaction((keys) => {
+      for (const key of keys) {
+        deleteSeen.run(key);
+        deleteObservations.run(key);
+        deleteNotifications.run(key);
+      }
+    });
+    tx(staleKeys);
+    return staleKeys.length;
   }
 }

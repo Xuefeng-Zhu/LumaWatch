@@ -65,6 +65,10 @@ export async function runMonitor(config, options = {}) {
   };
   const currentRunKept = new Map();
   const currentRunNew = new Map();
+  const deletedPastEvents = db.deletePastEvents();
+  if (deletedPastEvents > 0) {
+    logger?.info("Deleted past events from database", { deletedPastEvents });
+  }
 
   function rememberReportEvent(map, list, event) {
     const key = event.eventKey || eventKeyFor(event);
