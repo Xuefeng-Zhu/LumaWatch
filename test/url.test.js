@@ -16,6 +16,8 @@ test("non-event links are excluded", () => {
   assert.equal(isLumaEventUrl("https://luma.com/seattle"), false);
   assert.equal(isLumaEventUrl("https://luma.com/ios"), false);
   assert.equal(isLumaEventUrl("https://luma.com/android"), false);
+  assert.equal(isLumaEventUrl("https://luma.com/help"), false);
+  assert.equal(isLumaEventUrl("https://luma.com/help/faq"), false);
   assert.equal(isLumaEventUrl("https://example.com/ai-seattle-build-night"), false);
   assert.equal(isLumaEventUrl("https://luma.com/signin"), false);
   assert.equal(isLumaEventUrl("https://luma.com/ai-seattle-build-night"), true);
