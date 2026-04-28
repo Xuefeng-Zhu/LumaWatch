@@ -157,9 +157,14 @@ function parseSortableDate(text) {
     return Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12);
   }
 
-  const numeric = normalized.match(/\b(\d{1,2})\/(\d{1,2})\b/);
+  const numeric = normalized.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
   if (numeric) {
-    return Date.UTC(currentYear, Number(numeric[1]) - 1, Number(numeric[2]), 12);
+    const parsedYear = numeric[3] ? Number(numeric[3]) : currentYear;
+    const year = numeric[3] && numeric[3].length === 2
+      ? 2000 + parsedYear
+      : parsedYear;
+    const time = parseTimeParts(normalized);
+    return Date.UTC(year, Number(numeric[1]) - 1, Number(numeric[2]), time.hour, time.minute);
   }
 
   const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];

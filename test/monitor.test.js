@@ -105,6 +105,37 @@ test("HTML report sorts events by event date", async () => {
   db.close();
 });
 
+test("HTML report sorting respects explicit year in numeric dates", async () => {
+  const config = testConfig();
+  const db = makeDb(config);
+  const newer = aiSeattleEvent({
+    eventUrl: "https://luma.com/newer-numeric-date",
+    canonicalUrl: "https://luma.com/newer-numeric-date",
+    title: "Newer Numeric Date Event",
+    dateText: "1/2/2026, 6:00 PM"
+  });
+  const older = aiSeattleEvent({
+    eventUrl: "https://luma.com/older-numeric-date",
+    canonicalUrl: "https://luma.com/older-numeric-date",
+    title: "Older Numeric Date Event",
+    dateText: "12/31/2025, 6:00 PM"
+  });
+
+  await runMonitor(config, {
+    mode: "check",
+    db,
+    extractor: new FixtureExtractor({ fixture: [newer, older] }),
+    notifiers: [new CollectingNotifier()]
+  });
+
+  const html = fs.readFileSync(config.reports.path, "utf8");
+  assert.ok(
+    html.indexOf("Older Numeric Date Event") < html.indexOf("Newer Numeric Date Event"),
+    "expected older numeric date event to appear before newer one"
+  );
+  db.close();
+});
+
 test("HTML report renders every matching event seen in the current run", async () => {
   const config = testConfig();
   const db = makeDb(config);
