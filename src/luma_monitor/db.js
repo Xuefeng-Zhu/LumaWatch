@@ -9,25 +9,25 @@ function relativeEventTimestamp(text, now = new Date()) {
   const match = normalized.match(/\b(today|tomorrow|mon(day)?|tue(sday)?|wed(nesday)?|thu(rsday)?|fri(day)?|sat(urday)?|sun(day)?)\b/);
   if (!match) return null;
 
-  const target = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
+  const target = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
     12,
     0,
     0,
     0
-  ));
+  );
   const key = match[1].slice(0, 3).toLowerCase();
   if (key === "tom") {
-    target.setUTCDate(target.getUTCDate() + 1);
+    target.setDate(target.getDate() + 1);
   } else if (key !== "tod") {
-    const todayIndex = now.getUTCDay();
+    const todayIndex = now.getDay();
     const order = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
     const targetIndex = order.indexOf(key);
     if (todayIndex >= 0 && targetIndex >= 0) {
       const delta = (targetIndex - todayIndex + 7) % 7;
-      target.setUTCDate(target.getUTCDate() + delta);
+      target.setDate(target.getDate() + delta);
     }
   }
 
@@ -38,7 +38,7 @@ function relativeEventTimestamp(text, now = new Date()) {
     const meridiem = time[3].toLowerCase();
     if (meridiem === "pm" && hour < 12) hour += 12;
     if (meridiem === "am" && hour === 12) hour = 0;
-    target.setUTCHours(hour, minute, 0, 0);
+    target.setHours(hour, minute, 0, 0);
   }
 
   return target.getTime();
@@ -47,7 +47,7 @@ function relativeEventTimestamp(text, now = new Date()) {
 function parseEventTimestamp(value, now = new Date()) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return Number.POSITIVE_INFINITY;
-  const currentYear = now.getUTCFullYear();
+  const currentYear = now.getFullYear();
 
   const namedNoYear = text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b(?!,\s*\d{4})/i);
   if (namedNoYear) {
