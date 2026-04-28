@@ -4,10 +4,50 @@ import Database from "better-sqlite3";
 import { eventFingerprint, eventKeyFor } from "./url.js";
 import { nowIso } from "./time.js";
 
-function parseEventTimestamp(value) {
+function relativeEventTimestamp(text, now = new Date()) {
+  const normalized = String(text || "").toLowerCase();
+  const match = normalized.match(/\b(today|tomorrow|mon(day)?|tue(sday)?|wed(nesday)?|thu(rsday)?|fri(day)?|sat(urday)?|sun(day)?)\b/);
+  if (!match) return null;
+
+  const target = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    12,
+    0,
+    0,
+    0
+  );
+  const key = match[1].slice(0, 3).toLowerCase();
+  if (key === "tom") {
+    target.setDate(target.getDate() + 1);
+  } else if (key !== "tod") {
+    const todayIndex = now.getDay();
+    const order = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    const targetIndex = order.indexOf(key);
+    if (todayIndex >= 0 && targetIndex >= 0) {
+      const delta = (targetIndex - todayIndex + 7) % 7;
+      target.setDate(target.getDate() + delta);
+    }
+  }
+
+  const time = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  if (time) {
+    let hour = Number(time[1]);
+    const minute = Number(time[2] || 0);
+    const meridiem = time[3].toLowerCase();
+    if (meridiem === "pm" && hour < 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+    target.setHours(hour, minute, 0, 0);
+  }
+
+  return target.getTime();
+}
+
+function parseEventTimestamp(value, now = new Date()) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return Number.POSITIVE_INFINITY;
-  const currentYear = new Date().getFullYear();
+  const currentYear = now.getFullYear();
 
   const namedNoYear = text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b(?!,\s*\d{4})/i);
   if (namedNoYear) {
@@ -23,15 +63,18 @@ function parseEventTimestamp(value) {
     if (Number.isFinite(parsedNumeric)) return parsedNumeric;
   }
 
+  const relative = relativeEventTimestamp(text, now);
+  if (relative != null) return relative;
+
   const parsed = Date.parse(text);
   return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
 }
 
-function eventDateTimestampFromRawJson(rawJson) {
+function eventDateTimestampFromRawJson(rawJson, now = new Date()) {
   if (!rawJson) return Number.POSITIVE_INFINITY;
   try {
     const event = JSON.parse(rawJson);
-    return parseEventTimestamp(event.dateText || event.date_text || "");
+    return parseEventTimestamp(event.dateText || event.date_text || "", now);
   } catch {
     return Number.POSITIVE_INFINITY;
   }
@@ -257,12 +300,13 @@ export class SeenDatabase {
 
   deletePastEvents(options = {}) {
     const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+    const nowDate = new Date(nowMs);
     const rows = this.db.prepare(`
       select event_key, raw_json
       from seen_events
     `).all();
     const staleKeys = rows
-      .filter((row) => eventDateTimestampFromRawJson(row.raw_json) < nowMs)
+      .filter((row) => eventDateTimestampFromRawJson(row.raw_json, nowDate) < nowMs)
       .map((row) => row.event_key);
     if (!staleKeys.length) return 0;
 

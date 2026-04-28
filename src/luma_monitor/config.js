@@ -91,7 +91,10 @@ function mergeDeep(base, override) {
 
 function envBool(value) {
   if (value == null) return undefined;
-  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return undefined;
 }
 
 function envPositiveNumber(value) {
