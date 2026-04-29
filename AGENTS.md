@@ -63,33 +63,21 @@ node src/cli.js check --config config.yaml --headed
 
 ```mermaid
 flowchart TD
-  A[CLI: src/cli.js
-init-db, baseline, check] --> B[loadConfig
-src/luma_monitor/config.js]
-  B --> C[runMonitor
-src/luma_monitor/monitor.js]
-  C --> D[(SQLite)
-src/luma_monitor/db.js]
-  C --> E{Enabled sources}
-  E --> F[LumaExtractor.extractSource
-src/luma_monitor/extractor.js]
-  F --> G[Nearby Events anchors
-parseCardFields]
-  G --> H[scoreEvent
-src/luma_monitor/filter.js]
-  H --> I[Insert observation
-event_observations]
-  H --> J{Kept?}
-  J -- no --> K[Next candidate]
-  J -- yes --> L[normalizeUrl / buildEventKey
-src/luma_monitor/url.js]
-  L --> M[Dedup within run
-canonical event once]
-  M --> N[seen_events check]
-  N --> O[Notify unseen only
-src/luma_monitor/notifications.js]
-  M --> P[writeHtmlReport
-src/luma_monitor/report.js]
+  A["CLI: src/cli.js<br/>init-db, baseline, check"] --> B["loadConfig<br/>src/luma_monitor/config.js"]
+  B --> C["runMonitor<br/>src/luma_monitor/monitor.js"]
+  C --> D["SQLite<br/>src/luma_monitor/db.js"]
+  C --> E{"Enabled sources"}
+  E --> F["LumaExtractor.extractSource<br/>src/luma_monitor/extractor.js"]
+  F --> G["Nearby Events anchors<br/>parseCardFields"]
+  G --> H["scoreEvent<br/>src/luma_monitor/filter.js"]
+  H --> I["Insert observation<br/>event_observations"]
+  H --> J{"Kept?"}
+  J -- no --> K["Next candidate"]
+  J -- yes --> L["normalizeUrl / buildEventKey<br/>src/luma_monitor/url.js"]
+  L --> M["Dedup within run<br/>canonical event once"]
+  M --> N["seen_events check"]
+  N --> O["Notify unseen only<br/>src/luma_monitor/notifications.js"]
+  M --> P["writeHtmlReport<br/>src/luma_monitor/report.js"]
 ```
 
 This diagram mirrors the invariants above: extraction is limited to public Nearby Events, all candidates are observed in SQLite, dedupe is key-based, and notifications trigger only for unseen kept events.
