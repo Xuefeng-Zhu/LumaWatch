@@ -64,7 +64,7 @@ node src/cli.js check --config config.yaml --headed
 ```mermaid
 flowchart TD
   A[CLI: src/cli.js
-init-db | baseline | check] --> B[loadConfig
+init-db, baseline, check] --> B[loadConfig
 src/luma_monitor/config.js]
   B --> C[runMonitor
 src/luma_monitor/monitor.js]
