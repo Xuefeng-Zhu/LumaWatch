@@ -59,6 +59,29 @@ node src/cli.js check --config config.yaml --headed
 8. `seen_events` prevents duplicate notifications across runs.
 9. `writeHtmlReport` writes `reports/luma-report.html` when reports are enabled.
 
+## Architecture & Workflow Diagram
+
+```mermaid
+flowchart TD
+  A["CLI: src/cli.js<br/>init-db, baseline, check"] --> B["loadConfig<br/>src/luma_monitor/config.js"]
+  B --> C["runMonitor<br/>src/luma_monitor/monitor.js"]
+  C --> D["SQLite<br/>src/luma_monitor/db.js"]
+  C --> E{"Enabled sources"}
+  E --> F["LumaExtractor.extractSource<br/>src/luma_monitor/extractor.js"]
+  F --> G["Nearby Events anchors<br/>parseCardFields"]
+  G --> H["scoreEvent<br/>src/luma_monitor/filter.js"]
+  H --> I["Insert observation<br/>event_observations"]
+  H --> J{"Kept?"}
+  J -- no --> K["Next candidate"]
+  J -- yes --> L["normalizeUrl / buildEventKey<br/>src/luma_monitor/url.js"]
+  L --> M["Dedup within run<br/>canonical event once"]
+  M --> N["seen_events check"]
+  N --> O["Notify unseen only<br/>src/luma_monitor/notifications.js"]
+  M --> P["writeHtmlReport<br/>src/luma_monitor/report.js"]
+```
+
+This diagram mirrors the invariants above: extraction is limited to public Nearby Events, all candidates are observed in SQLite, dedupe is key-based, and notifications trigger only for unseen kept events.
+
 ## Important Invariants
 
 - Extraction should only use the Nearby Events section from public Luma pages.
